@@ -21,7 +21,7 @@ func main() {
 	if os.Getenv("ASTRO_BRAIN") != "rules" { // default: cerebro LLM (con fallback a reglas)
 		interpreter = NewLLMInterpreter(
 			httpChat(os.Getenv("ASTRO_LLM_URL"), os.Getenv("ASTRO_LLM_KEY"),
-				envOr("ASTRO_LLM_MODEL", "gemini-2.5-flash")),
+				envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
 			acts, rules)
 	}
 
