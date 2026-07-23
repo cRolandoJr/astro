@@ -36,16 +36,18 @@ type VoiceInput struct {
 	Runner       Runner
 	WhisperBin   string
 	WhisperModel string
-	RecSeconds   int
+	MaxSeconds   int                          // tope duro de grabación (seg); el silence corta antes en uso normal
+	SilencePct   string                       // umbral de silencio (ej "3%"); vacío → default
+	TrailSec     string                       // silencio de cola antes de cortar (ej "1.5"); vacío → default
 	WavPath      string                       // ej. /tmp/astro-in.wav
 	ReadFile     func(string) ([]byte, error) // default os.ReadFile; inyectable en tests
 	trigger      *bufio.Scanner
 }
 
-func NewVoiceInput(r Runner, whisperBin, whisperModel string, recSeconds int) *VoiceInput {
+func NewVoiceInput(r Runner, whisperBin, whisperModel string, maxSeconds int) *VoiceInput {
 	return &VoiceInput{
 		Runner: r, WhisperBin: whisperBin, WhisperModel: whisperModel,
-		RecSeconds: recSeconds, WavPath: "/tmp/astro-in.wav",
+		MaxSeconds: maxSeconds, WavPath: "/tmp/astro-in.wav",
 		trigger: bufio.NewScanner(os.Stdin),
 	}
 }
@@ -63,14 +65,25 @@ func (v *VoiceInput) Listen() (string, error) {
 
 // capture graba y transcribe. Es la parte testeable (sin el Enter interactivo).
 func (v *VoiceInput) capture() (string, error) {
-	secs := v.RecSeconds
-	if secs <= 0 {
-		secs = 4
+	maxSecs := v.MaxSeconds
+	if maxSecs <= 0 {
+		maxSecs = 30
 	}
-	fmt.Printf("🎙️  grabando %ds… hablá ahora\n", secs)
-	if _, err := v.Runner.Run("arecord", "-q", "-d", strconv.Itoa(secs),
-		"-f", "S16_LE", "-r", "16000", "-c", "1", v.WavPath); err != nil {
-		return "", fmt.Errorf("no pude grabar (¿arecord instalado?): %w", err)
+	thresh := v.SilencePct
+	if thresh == "" {
+		thresh = "3%"
+	}
+	trail := v.TrailSec
+	if trail == "" {
+		trail = "1.5"
+	}
+	fmt.Println("🎙️  hablá… (corta sola al callarte)")
+	// rec (sox) graba hasta el silencio de cola; 'timeout' es el tope duro si el umbral nunca
+	// detecta silencio (ruido constante) → no graba infinito. rec sale 0 al cortar por silencio.
+	if _, err := v.Runner.Run("timeout", strconv.Itoa(maxSecs),
+		"rec", "-q", "-c", "1", "-r", "16000", v.WavPath,
+		"silence", "1", "0.1", thresh, "1", trail, thresh); err != nil {
+		return "", fmt.Errorf("no pude grabar (¿sox/rec + timeout/coreutils + PipeWire?): %w", err)
 	}
 	// whisper escribe la transcripción a <of>.txt (-nt: sin timestamps).
 	ofPrefix := strings.TrimSuffix(v.WavPath, ".wav")

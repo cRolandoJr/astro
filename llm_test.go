@@ -10,12 +10,12 @@ import (
 )
 
 func fakeChat(reply string, err error) chatFunc {
-	return func(system, user string) (string, error) { return reply, err }
+	return func(system string, history []Exchange, user string) (string, error) { return reply, err }
 }
 
 func newLLM(chat chatFunc) *LLMInterpreter {
 	acts := buildActions(time.Now)
-	return NewLLMInterpreter(chat, acts, NewRuleInterpreter(acts), nil, 5)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts)})
 }
 
 // fakeMemory: MemoryStore de test. Registra lo guardado y devuelve un Recall fijo.
@@ -35,7 +35,7 @@ func (f *fakeMemory) Recall(query string, k int) ([]string, error) {
 
 func newLLMWithMem(chat chatFunc, mem MemoryStore) *LLMInterpreter {
 	acts := buildActions(time.Now)
-	return NewLLMInterpreter(chat, acts, NewRuleInterpreter(acts), mem, 5)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts), Mem: mem})
 }
 
 func TestLLMRecordarGuardaElHecho(t *testing.T) {
@@ -68,7 +68,7 @@ func TestLLMRecordarSinMemVaAFallback(t *testing.T) {
 func TestLLMInyectaHechosAlPrompt(t *testing.T) {
 	mem := &fakeMemory{recall: []string{"el usuario usa NixOS"}}
 	var seenSystem string
-	chat := func(system, user string) (string, error) {
+	chat := func(system string, history []Exchange, user string) (string, error) {
 		seenSystem = system
 		return `{"action":"none","say":"ok"}`, nil
 	}
@@ -185,5 +185,84 @@ func TestLLMSayPuroSinAction(t *testing.T) {
 	reply, _ := a.Run(&fakeRunner{})
 	if reply != "un chiste corto" {
 		t.Fatalf("fue %q", reply)
+	}
+}
+
+type fakeClock struct{ t time.Time }
+
+func (c *fakeClock) now() time.Time { return c.t }
+
+func newLLMClock(chat chatFunc, clock *fakeClock) *LLMInterpreter {
+	acts := buildActions(time.Now)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts),
+		Now: clock.now, IdleWindow: 5 * time.Minute})
+}
+
+func TestLLMPasaHistorialAlSegundoTurno(t *testing.T) {
+	var seen []Exchange
+	chat := func(system string, history []Exchange, user string) (string, error) {
+		seen = history
+		return `{"action":"none","say":"ok"}`, nil
+	}
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := newLLMClock(chat, clock)
+	li.Interpret("subí el volumen") // turno 1: historial vacío
+	clock.t = clock.t.Add(10 * time.Second)
+	li.Interpret("un poco más") // turno 2: debe ver el turno 1
+	if len(seen) != 1 || seen[0].User != "subí el volumen" || seen[0].Assistant != "ok" {
+		t.Fatalf("el 2do turno debía ver el 1ro; fue %v", seen)
+	}
+}
+
+func TestLLMResetPorInactividad(t *testing.T) {
+	var seen []Exchange
+	chat := func(system string, history []Exchange, user string) (string, error) {
+		seen = history
+		return `{"action":"none","say":"ok"}`, nil
+	}
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := newLLMClock(chat, clock)
+	li.Interpret("primero")
+	clock.t = clock.t.Add(6 * time.Minute) // pasó el umbral de 5 min
+	li.Interpret("segundo")                // → reset, historial vacío
+	if len(seen) != 0 {
+		t.Fatalf("tras >5min el historial se resetea; fue %v", seen)
+	}
+}
+
+func TestLLMHistorialRecortaAVentana(t *testing.T) {
+	chat := func(system string, history []Exchange, user string) (string, error) {
+		return `{"action":"none","say":"ok"}`, nil
+	}
+	acts := buildActions(time.Now)
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts),
+		Now: clock.now, HistoryTurns: 2})
+	for i := 0; i < 4; i++ {
+		li.Interpret("frase")
+	}
+	if len(li.history) != 2 {
+		t.Fatalf("la ventana debía recortar a 2 turnos, fue %d", len(li.history))
+	}
+}
+
+func TestLLMNoRegistraTurnoRechazado(t *testing.T) {
+	// open con arg peligroso → cae al fallback → NO debe quedar en el historial (spec §4).
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := newLLMClock(fakeChat(`{"action":"open","arg":"firefox; rm -rf ~","say":"abriendo"}`, nil), clock)
+	li.Interpret("abrí firefox; rm -rf ~")
+	if len(li.history) != 0 {
+		t.Fatalf("un turno rechazado por seguridad no debe registrarse; historial=%v", li.history)
+	}
+}
+
+func TestLLMNoRegistraComandoSinSay(t *testing.T) {
+	// Comando sin say: Astro habla la frase enlatada, pero no hay respuesta que registrar →
+	// el historial no debe guardar un turno con asistente vacío.
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := newLLMClock(fakeChat(`{"action":"pausar"}`, nil), clock)
+	li.Interpret("pausá")
+	if len(li.history) != 0 {
+		t.Fatalf("un comando sin say no debe registrar turno vacío; historial=%v", li.history)
 	}
 }

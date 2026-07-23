@@ -12,28 +12,65 @@ import (
 	"time"
 )
 
-// chatFunc habla con el LLM: recibe prompt de sistema + texto del usuario, devuelve la
-// respuesta cruda (el JSON). Es un seam: real por HTTP (Task 3) o fake en tests.
-type chatFunc func(system, user string) (string, error)
+// Exchange es un turno de la charla (lo que dijo el usuario y lo que respondió Astro).
+type Exchange struct{ User, Assistant string }
+
+// chatFunc habla con el LLM: system + historial de turnos previos + la frase actual → JSON crudo.
+type chatFunc func(system string, history []Exchange, user string) (string, error)
 
 // LLMInterpreter elige una acción del registro usando un LLM. Si el LLM falla o devuelve
 // algo raro, cae al 'fallback' (el RuleInterpreter). Implementa Interpreter.
 type LLMInterpreter struct {
-	chat     chatFunc
-	actions  map[string]*Action
-	fallback Interpreter
-	mem      MemoryStore // opcional (nil = sin memoria)
-	topK     int
+	chat         chatFunc
+	actions      map[string]*Action
+	fallback     Interpreter
+	mem          MemoryStore // opcional (nil = sin memoria persistente)
+	topK         int
+	now          func() time.Time
+	history      []Exchange
+	historyTurns int
+	idleWindow   time.Duration
+	lastTurn     time.Time
 }
 
-func NewLLMInterpreter(chat chatFunc, actions map[string]*Action, fallback Interpreter, mem MemoryStore, topK int) *LLMInterpreter {
-	if topK <= 0 {
-		topK = 5
+// LLMConfig junta la config del intérprete (creció más allá de lo que conviene posicional).
+type LLMConfig struct {
+	Chat         chatFunc
+	Actions      map[string]*Action
+	Fallback     Interpreter
+	Mem          MemoryStore      // opcional (nil = sin memoria persistente)
+	TopK         int              // <=0 → 5
+	Now          func() time.Time // nil → time.Now
+	HistoryTurns int              // <=0 → 6
+	IdleWindow   time.Duration    // <=0 → 5 min
+}
+
+func NewLLMInterpreter(cfg LLMConfig) *LLMInterpreter {
+	if cfg.TopK <= 0 {
+		cfg.TopK = 5
 	}
-	return &LLMInterpreter{chat: chat, actions: actions, fallback: fallback, mem: mem, topK: topK}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	if cfg.HistoryTurns <= 0 {
+		cfg.HistoryTurns = 6
+	}
+	if cfg.IdleWindow <= 0 {
+		cfg.IdleWindow = 5 * time.Minute
+	}
+	return &LLMInterpreter{
+		chat: cfg.Chat, actions: cfg.Actions, fallback: cfg.Fallback, mem: cfg.Mem,
+		topK: cfg.TopK, now: cfg.Now, historyTurns: cfg.HistoryTurns, idleWindow: cfg.IdleWindow,
+	}
 }
 
 func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
+	now := li.now()
+	// Reset por inactividad: si pasó demasiado desde la última frase, es charla nueva.
+	if !li.lastTurn.IsZero() && now.Sub(li.lastTurn) > li.idleWindow {
+		li.history = nil
+	}
+	li.lastTurn = now
 	var facts []string
 	if li.mem != nil {
 		f, err := li.mem.Recall(text, li.topK)
@@ -43,7 +80,7 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 			facts = f
 		}
 	}
-	reply, err := li.chat(li.systemPrompt(facts), text)
+	reply, err := li.chat(li.systemPrompt(facts), li.history, text)
 	if err != nil {
 		// Logueamos: un fallback silencioso daría "verde falso" (las reglas rescatan
 		// comandos con keyword y no te enterarías de que el LLM está muerto).
@@ -61,21 +98,25 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	}
 	// Charla pura: sin acción (o "none") pero con say → solo hablar.
 	if (choice.Action == "" || choice.Action == "none") && choice.Say != "" {
+		li.remember(text, choice.Say)
 		return sayAction(choice.Say), nil
 	}
 	if choice.Action == "recordar" && li.mem != nil && choice.Arg != "" {
+		li.remember(text, choice.Say)
 		return wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), nil
 	}
 	if choice.Action == "open" {
 		if !isSafeAppName(choice.Arg) {
-			return li.fallback.Interpret(text) // arg peligroso → no por acá
+			return li.fallback.Interpret(text) // rechazo de seguridad → NO se registra
 		}
+		li.remember(text, choice.Say)
 		return wrap(openAppAction(choice.Arg), choice.Say), nil
 	}
 	if a, ok := li.actions[choice.Action]; ok {
+		li.remember(text, choice.Say)
 		return wrap(a, choice.Say), nil
 	}
-	return li.fallback.Interpret(text) // ni acción ni say → reglas
+	return li.fallback.Interpret(text) // acción desconocida → NO se registra
 }
 
 // systemPrompt arma el prompt: instrucciones + hechos recuperados (si hay) + menú (orden estable).
@@ -121,15 +162,18 @@ func extractJSON(s string) string {
 // httpChat devuelve un chatFunc que pega a un endpoint OpenAI-compatible (chat completions).
 func httpChat(baseURL, apiKey, model string) chatFunc {
 	client := &http.Client{Timeout: 20 * time.Second}
-	return func(system, user string) (string, error) {
+	return func(system string, history []Exchange, user string) (string, error) {
+		messages := []map[string]string{{"role": "system", "content": system}}
+		for _, ex := range history {
+			messages = append(messages, map[string]string{"role": "user", "content": ex.User})
+			messages = append(messages, map[string]string{"role": "assistant", "content": ex.Assistant})
+		}
+		messages = append(messages, map[string]string{"role": "user", "content": user})
 		body, _ := json.Marshal(map[string]any{
 			"model":           model,
 			"temperature":     0,
 			"response_format": map[string]string{"type": "json_object"},
-			"messages": []map[string]string{
-				{"role": "system", "content": system},
-				{"role": "user", "content": user},
-			},
+			"messages":        messages,
 		})
 		url := strings.TrimRight(baseURL, "/") + "/chat/completions"
 		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
@@ -192,4 +236,18 @@ func memoryWriteAction(mem MemoryStore, text string) *Action {
 			}
 			return "", nil
 		}}
+}
+
+// remember agrega el turno al historial efímero y lo recorta a la ventana de N.
+func (li *LLMInterpreter) remember(user, assistant string) {
+	// Sin respuesta hablada no registramos el turno: guardar assistant="" mandaría al LLM,
+	// el turno siguiente, un mensaje que Astro nunca dijo (la frase enlatada de la acción se
+	// habla pero no llega hasta acá) — y varios endpoints rechazan content vacío.
+	if assistant == "" {
+		return
+	}
+	li.history = append(li.history, Exchange{User: user, Assistant: assistant})
+	if len(li.history) > li.historyTurns {
+		li.history = li.history[len(li.history)-li.historyTurns:]
+	}
 }

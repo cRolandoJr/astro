@@ -50,9 +50,9 @@ El resto de `capture()` (whisper → limpiar transcripción → `entendí: %q`) 
 
 El LLM hoy recibe `{system, user}` de a una frase. Pasa a recibir `{system, historial…, user}`.
 
-- **Historial efímero** en `LLMInterpreter`: ventana rodante de los últimos **N turnos** (default 6 =
-  3 idas y vueltas, `ASTRO_HISTORY_TURNS`). Cada turno = `{user, assistant}` (lo que dijiste + el `say`
-  que Astro habló). En RAM; **no se persiste**.
+- **Historial efímero** en `LLMInterpreter`: ventana rodante de los últimos **N turnos** (default 6,
+  `ASTRO_HISTORY_TURNS`). Cada turno = `{user, assistant}` = una ida y vuelta (lo que dijiste + el `say`
+  que Astro habló). En RAM; **no se persiste**. Un turno sin `say` (comando mudo) no se registra.
 - **Reset por inactividad:** si entre una frase y la siguiente pasaron más de **5 min**
   (`ASTRO_HISTORY_IDLE_MIN`), se vacía el historial antes de procesar → charla nueva. Requiere un reloj
   inyectado `now func() time.Time` (patrón ya usado en `buildActions`).

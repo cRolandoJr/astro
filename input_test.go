@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -19,29 +20,40 @@ func TestCleanTranscript(t *testing.T) {
 	}
 }
 
-func TestVoiceInputCaptureArmaComandosYLimpia(t *testing.T) {
+func TestVoiceCaptureGrabaHastaSilencio(t *testing.T) {
 	fake := &fakeRunner{}
 	v := VoiceInput{
-		Runner: fake, WhisperBin: "whisper-cpp", WhisperModel: "/m/small.bin",
-		RecSeconds: 4, WavPath: "/tmp/astro-in.wav",
-		ReadFile: func(string) ([]byte, error) { return []byte("  pausá\n"), nil },
+		Runner: fake, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
+		WavPath: "/tmp/astro-in.wav", MaxSeconds: 30,
+		ReadFile: func(string) ([]byte, error) { return []byte("hola astro"), nil },
 	}
-	text, err := v.capture()
+	got, err := v.capture()
 	if err != nil {
-		t.Fatalf("no debería fallar: %v", err)
+		t.Fatalf("capture: %v", err)
 	}
-	if text != "pausá" {
-		t.Fatalf("esperaba transcripción limpia 'pausá', fue %q", text)
+	if got != "hola astro" {
+		t.Fatalf("esperaba la transcripción, fue %q", got)
 	}
-	// 2 comandos: arecord y whisper
 	if len(fake.calls) != 2 {
-		t.Fatalf("esperaba 2 comandos (arecord, whisper), hubo %d: %v", len(fake.calls), fake.calls)
+		t.Fatalf("esperaba 2 comandos (rec, whisper), hubo %d: %v", len(fake.calls), fake.calls)
 	}
-	if fake.calls[0][0] != "arecord" {
-		t.Errorf("primer comando debería ser arecord, fue %v", fake.calls[0])
+	// comando 0: timeout <max> rec ... silence ...
+	wantRec := []string{"timeout", "30", "rec", "-q", "-c", "1", "-r", "16000", "/tmp/astro-in.wav",
+		"silence", "1", "0.1", "3%", "1", "1.5", "3%"}
+	if !reflect.DeepEqual(fake.calls[0], wantRec) {
+		t.Fatalf("comando de grabación:\n esperaba %v\n fue      %v", wantRec, fake.calls[0])
 	}
-	wantWhisper := []string{"whisper-cpp", "-m", "/m/small.bin", "-f", "/tmp/astro-in.wav", "-l", "es", "-nt", "-otxt", "-of", "/tmp/astro-in"}
+	// comando 1: whisper (armado que se conserva de la versión anterior)
+	wantWhisper := []string{"whisper-cli", "-m", "m.bin", "-f", "/tmp/astro-in.wav", "-l", "es", "-nt", "-otxt", "-of", "/tmp/astro-in"}
 	if !reflect.DeepEqual(fake.calls[1], wantWhisper) {
-		t.Errorf("comando whisper mal armado:\n got  %v\n want %v", fake.calls[1], wantWhisper)
+		t.Fatalf("comando whisper:\n esperaba %v\n fue      %v", wantWhisper, fake.calls[1])
+	}
+}
+
+func TestVoiceCaptureErrorSiRecFalla(t *testing.T) {
+	fake := &fakeRunner{err: fmt.Errorf("device busy")}
+	v := VoiceInput{Runner: fake, WavPath: "/tmp/x.wav"}
+	if _, err := v.capture(); err == nil {
+		t.Fatal("esperaba error si rec falla")
 	}
 }
