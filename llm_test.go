@@ -266,3 +266,63 @@ func TestLLMNoRegistraComandoSinSay(t *testing.T) {
 		t.Fatalf("un comando sin say no debe registrar turno vacío; historial=%v", li.history)
 	}
 }
+
+func TestLLMMirarCapturaYPregunta(t *testing.T) {
+	fake := &fakeRunner{}
+	var gotQuestion, gotPath string
+	vision := func(question, imagePath string) (string, error) {
+		gotQuestion, gotPath = question, imagePath
+		return "Veo una terminal.", nil
+	}
+	acts := buildActions(time.Now)
+	li := NewLLMInterpreter(LLMConfig{Chat: fakeChat(`{"action":"mirar","arg":"HDMI-A-1"}`, nil),
+		Actions: acts, Fallback: NewRuleInterpreter(acts), Vision: vision})
+	a, err := li.Interpret("mirá el de la derecha, ¿qué ves?")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	reply, err := a.Run(fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "Veo una terminal." {
+		t.Fatalf("esperaba la respuesta de visión, fue %q", reply)
+	}
+	wantGrim := []string{"grim", "-o", "HDMI-A-1", "/tmp/astro-screen.png"}
+	if !reflect.DeepEqual(fake.calls[0], wantGrim) {
+		t.Fatalf("grim mal armado:\n esperaba %v\n fue      %v", wantGrim, fake.calls[0])
+	}
+	if gotQuestion != "mirá el de la derecha, ¿qué ves?" {
+		t.Fatalf("la pregunta a visión debía ser la frase del usuario, fue %q", gotQuestion)
+	}
+	if gotPath != "/tmp/astro-screen.png" {
+		t.Fatalf("path a visión: %q", gotPath)
+	}
+	if len(li.history) != 0 {
+		t.Fatalf("mirar es stateless, no debe registrar historial; fue %v", li.history)
+	}
+}
+
+func TestLLMMirarSinOutputCapturaTodo(t *testing.T) {
+	fake := &fakeRunner{}
+	vision := func(question, imagePath string) (string, error) { return "ok", nil }
+	acts := buildActions(time.Now)
+	li := NewLLMInterpreter(LLMConfig{Chat: fakeChat(`{"action":"mirar","arg":""}`, nil),
+		Actions: acts, Fallback: NewRuleInterpreter(acts), Vision: vision})
+	a, _ := li.Interpret("mirá la pantalla")
+	if _, err := a.Run(fake); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"grim", "/tmp/astro-screen.png"} // sin -o
+	if !reflect.DeepEqual(fake.calls[0], want) {
+		t.Fatalf("sin monitor → grim sin -o; esperaba %v, fue %v", want, fake.calls[0])
+	}
+}
+
+func TestLLMMirarSinVisionVaAFallback(t *testing.T) {
+	// sin Vision configurado → 'mirar' cae al fallback (no promete lo que no puede)
+	a, err := newLLM(fakeChat(`{"action":"mirar","arg":"","say":"ok"}`, nil)).Interpret("mirá la pantalla")
+	if a != nil || !errors.Is(err, ErrNoEntiendo) {
+		t.Fatalf("sin visión, mirar debe caer al fallback; a=%v err=%v", a, err)
+	}
+}

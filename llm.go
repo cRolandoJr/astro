@@ -31,6 +31,8 @@ type LLMInterpreter struct {
 	historyTurns int
 	idleWindow   time.Duration
 	lastTurn     time.Time
+	vision       visionFunc
+	monitors     string
 }
 
 // LLMConfig junta la config del intérprete (creció más allá de lo que conviene posicional).
@@ -43,6 +45,8 @@ type LLMConfig struct {
 	Now          func() time.Time // nil → time.Now
 	HistoryTurns int              // <=0 → 6
 	IdleWindow   time.Duration    // <=0 → 5 min
+	Vision       visionFunc       // opcional (nil = sin visión)
+	Monitors     string           // lista de monitores para el prompt (vacía = sin resolución de nombres)
 }
 
 func NewLLMInterpreter(cfg LLMConfig) *LLMInterpreter {
@@ -61,6 +65,7 @@ func NewLLMInterpreter(cfg LLMConfig) *LLMInterpreter {
 	return &LLMInterpreter{
 		chat: cfg.Chat, actions: cfg.Actions, fallback: cfg.Fallback, mem: cfg.Mem,
 		topK: cfg.TopK, now: cfg.Now, historyTurns: cfg.HistoryTurns, idleWindow: cfg.IdleWindow,
+		vision: cfg.Vision, monitors: cfg.Monitors,
 	}
 }
 
@@ -105,6 +110,9 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 		li.remember(text, choice.Say)
 		return wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), nil
 	}
+	if choice.Action == "mirar" && li.vision != nil {
+		return lookAction(li.vision, choice.Arg, text), nil // stateless: no se registra en historial
+	}
 	if choice.Action == "open" {
 		if !isSafeAppName(choice.Arg) {
 			return li.fallback.Interpret(text) // rechazo de seguridad → NO se registra
@@ -145,6 +153,12 @@ func (li *LLMInterpreter) systemPrompt(facts []string) string {
 	b.WriteString("- open (arg = nombre de la app): abrir una app o programa\n")
 	if li.mem != nil {
 		b.WriteString("- recordar (arg = el hecho a recordar): guardá algo que el usuario te pide recordar\n")
+	}
+	if li.vision != nil {
+		b.WriteString("- mirar (arg = nombre del monitor; vacío = el enfocado): mirá la pantalla y respondé sobre lo que hay\n")
+		if li.monitors != "" {
+			b.WriteString("Monitores (elegí el name; x menor = más a la izquierda; si no aclarás, el enfocado): " + li.monitors + "\n")
+		}
 	}
 	return b.String()
 }
@@ -235,6 +249,22 @@ func memoryWriteAction(mem MemoryStore, text string) *Action {
 				return "", err
 			}
 			return "", nil
+		}}
+}
+
+// lookAction captura un monitor con grim y le pregunta a la visión sobre la imagen.
+func lookAction(vision visionFunc, output, question string) *Action {
+	return &Action{Name: "mirar", Face: Neutral,
+		Run: func(r Runner) (string, error) {
+			const path = "/tmp/astro-screen.png"
+			args := []string{"-o", output, path}
+			if output == "" {
+				args = []string{path} // sin -o: toda la pantalla (fallback)
+			}
+			if _, err := r.Run("grim", args...); err != nil {
+				return "", fmt.Errorf("no pude capturar la pantalla (¿grim?): %w", err)
+			}
+			return vision(question, path)
 		}}
 }
 
