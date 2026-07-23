@@ -47,7 +47,11 @@ func (ri *RuleInterpreter) Interpret(text string) (*Action, error) {
 		if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
 			return nil, ErrNoEntiendo
 		}
-		return openAppAction(strings.TrimSpace(parts[1])), nil
+		app := strings.TrimSpace(parts[1])
+		if !isSafeAppName(app) {
+			return nil, ErrNoEntiendo
+		}
+		return openAppAction(app), nil
 	default:
 		return nil, ErrNoEntiendo
 	}
@@ -76,4 +80,24 @@ func containsAny(s string, subs ...string) bool {
 func normalize(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	return strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ü", "u").Replace(s)
+}
+
+// isSafeAppName valida que el nombre de app a pasar a `hyprctl dispatch exec` sea un
+// token simple: sin espacios ni metacaracteres de shell (C1: inyección de comandos).
+// Solo permite letras, dígitos, punto, guion bajo y guion medio.
+func isSafeAppName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '.' || r == '_' || r == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
