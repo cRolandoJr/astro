@@ -1,0 +1,13 @@
+# binarios / build de Go
+*.exe
+*.test
+*.out
+/bin/
+
+# descarga original redundante (ya está extraída en tutorial-original/)
+tutorial-original.zip
+
+# editor / SO
+.DS_Store
+*.swp
+*~
