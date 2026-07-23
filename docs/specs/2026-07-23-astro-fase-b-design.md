@@ -63,7 +63,7 @@ Todo shellout pasa por `Runner`/`RunWithInput` → todo testeable con `fakeRunne
 | Qué | Herramienta | Cómo se obtiene |
 |---|---|---|
 | Grabar audio | `arecord` (alsa-utils; anda sobre PipeWire) — 4s, 16kHz, mono, S16 | `nixpkgs#alsa-utils` |
-| STT | **whisper.cpp** (binario `whisper-cpp`) + modelo `ggml-base.bin` (multilingüe) | `nixpkgs#whisper-cpp` + bajar el modelo una vez |
+| STT | **whisper.cpp** (binario `whisper-cpp`) + modelo `ggml-small.bin` (multilingüe) | `nixpkgs#whisper-cpp` + bajar el modelo una vez |
 | TTS | **Piper** (`piper-tts`) + una voz en español (`.onnx` + `.json`) | `nixpkgs#piper-tts` + bajar la voz una vez |
 | Reproducir | `pw-play` (PipeWire) | `nixpkgs#pipewire` (ya lo tenés) |
 
@@ -100,8 +100,8 @@ Mismo criterio que Fase A: rutas por env, sin hardcodear el home.
 ## 9. Decisiones tomadas (defaults — vetables en la revisión)
 
 - **Trigger:** push-to-talk por terminal (Enter), ventana **fija de 4s**. (Enter-para-parar y VAD, diferidos.)
-- **STT:** whisper.cpp modelo **`base`** multilingüe (buen equilibrio velocidad/precisión en CPU para
-  comandos cortos; `small` mejora el español si hace falta — swap de un env var).
+- **STT:** whisper.cpp modelo **`small`** multilingüe (mejor precisión en español que `base`, a costa de
+  algo de velocidad en CPU; sigue siendo swappable por env var si querés `base` para más rapidez).
 - **TTS:** Piper con una voz **español** (`es_ES`; alternativas `es_MX`/`es_AR` si preferís el acento).
 - **Idioma whisper:** forzado a `es`.
 - **Grabación:** `arecord -d N` (ventana fija = un solo comando Run-and-wait, sin control de proceso →
