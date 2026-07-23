@@ -86,7 +86,9 @@ func (v *VoiceInput) capture() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("no pude leer la transcripción: %w", err)
 	}
-	return cleanTranscript(string(raw)), nil
+	text := cleanTranscript(string(raw))
+	fmt.Printf("🗣️  entendí: %q\n", text) // feedback: qué transcribió Whisper (debug + UX)
+	return text, nil
 }
 
 // cleanTranscript limpia la salida de whisper: saca marcadores entre corchetes
