@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,7 +15,86 @@ func fakeChat(reply string, err error) chatFunc {
 
 func newLLM(chat chatFunc) *LLMInterpreter {
 	acts := buildActions(time.Now)
-	return NewLLMInterpreter(chat, acts, NewRuleInterpreter(acts))
+	return NewLLMInterpreter(chat, acts, NewRuleInterpreter(acts), nil, 5)
+}
+
+// fakeMemory: MemoryStore de test. Registra lo guardado y devuelve un Recall fijo.
+type fakeMemory struct {
+	remembered []string
+	recall     []string
+	recallErr  error
+}
+
+func (f *fakeMemory) Remember(text string) error {
+	f.remembered = append(f.remembered, text)
+	return nil
+}
+func (f *fakeMemory) Recall(query string, k int) ([]string, error) {
+	return f.recall, f.recallErr
+}
+
+func newLLMWithMem(chat chatFunc, mem MemoryStore) *LLMInterpreter {
+	acts := buildActions(time.Now)
+	return NewLLMInterpreter(chat, acts, NewRuleInterpreter(acts), mem, 5)
+}
+
+func TestLLMRecordarGuardaElHecho(t *testing.T) {
+	mem := &fakeMemory{}
+	a, err := newLLMWithMem(fakeChat(`{"action":"recordar","arg":"uso NixOS","say":"Dale, anotado."}`, nil), mem).
+		Interpret("acordate que uso NixOS")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	reply, err := a.Run(&fakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "Dale, anotado." {
+		t.Fatalf("esperaba el say, fue %q", reply)
+	}
+	if len(mem.remembered) != 1 || mem.remembered[0] != "uso NixOS" {
+		t.Fatalf("esperaba guardar 'uso NixOS', fue %v", mem.remembered)
+	}
+}
+
+func TestLLMRecordarSinMemVaAFallback(t *testing.T) {
+	// mem nil → 'recordar' no disponible → fallback (reglas → ErrNoEntiendo).
+	a, err := newLLM(fakeChat(`{"action":"recordar","arg":"algo","say":"ok"}`, nil)).Interpret("xyzzy")
+	if a != nil || !errors.Is(err, ErrNoEntiendo) {
+		t.Fatalf("sin memoria, recordar debe caer al fallback; a=%v err=%v", a, err)
+	}
+}
+
+func TestLLMInyectaHechosAlPrompt(t *testing.T) {
+	mem := &fakeMemory{recall: []string{"el usuario usa NixOS"}}
+	var seenSystem string
+	chat := func(system, user string) (string, error) {
+		seenSystem = system
+		return `{"action":"none","say":"ok"}`, nil
+	}
+	if _, err := newLLMWithMem(chat, mem).Interpret("qué distro uso"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(seenSystem, "el usuario usa NixOS") {
+		t.Fatalf("el prompt debía incluir el hecho recuperado; prompt=%q", seenSystem)
+	}
+}
+
+func TestLLMRecallErrorNoRompeElTurno(t *testing.T) {
+	mem := &fakeMemory{recallErr: fmt.Errorf("embed caído")}
+	a, err := newLLMWithMem(fakeChat(`{"action":"none","say":"hola"}`, nil), mem).Interpret("hola")
+	if err != nil || a == nil {
+		t.Fatalf("un fallo de Recall no debe romper el turno; a=%v err=%v", a, err)
+	}
+}
+
+// #3 (mentor): recordar con arg vacío no debe guardar un hecho vacío (no matchea → fallback).
+func TestLLMRecordarArgVacioNoGuarda(t *testing.T) {
+	mem := &fakeMemory{}
+	_, _ = newLLMWithMem(fakeChat(`{"action":"recordar","arg":"","say":"ok"}`, nil), mem).Interpret("acordate")
+	if len(mem.remembered) != 0 {
+		t.Fatalf("no debe guardar un hecho vacío; guardó %v", mem.remembered)
+	}
 }
 
 func TestLLMMapeaAccionDelRegistro(t *testing.T) {

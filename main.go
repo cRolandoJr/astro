@@ -22,7 +22,7 @@ func main() {
 		interpreter = NewLLMInterpreter(
 			httpChat(os.Getenv("ASTRO_LLM_URL"), os.Getenv("ASTRO_LLM_KEY"),
 				envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
-			acts, rules)
+			acts, rules, nil, 5)
 	}
 
 	// Salida de voz (si no hay piper configurado, degradamos a solo-texto).
