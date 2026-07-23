@@ -14,3 +14,6 @@ tutorial-original.zip
 
 # binario compilado del daemon (nombre = módulo)
 /astro
+
+# secreto local (API key) — nunca versionar
+secrets.env
