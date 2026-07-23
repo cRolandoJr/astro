@@ -44,17 +44,23 @@ func main() {
 		FxArgs: strings.Fields(os.Getenv("ASTRO_VOICE_FX")), FxPath: "/tmp/astro-fx.wav",
 	}
 
-	// Entrada: voz por default, stdin si ASTRO_INPUT=stdin (para debug).
+	// Entrada: voz por default, stdin si ASTRO_INPUT=stdin (para debug), wake-word si ASTRO_INPUT=wake.
 	var input InputSource
-	if os.Getenv("ASTRO_INPUT") == "stdin" {
+	var wake *WakeWordInput
+	switch os.Getenv("ASTRO_INPUT") {
+	case "stdin":
 		input = NewStdinInput()
-	} else {
-		secs, _ := strconv.Atoi(os.Getenv("ASTRO_REC_SECONDS")) // ahora = tope duro
-		vi := NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cli"),
-			os.Getenv("ASTRO_WHISPER_MODEL"), secs)
-		vi.SilencePct = os.Getenv("ASTRO_REC_SILENCE_PCT") // vacío → default en capture()
-		vi.TrailSec = os.Getenv("ASTRO_REC_TRAIL_SEC")
-		input = vi
+	case "wake":
+		w, err := NewWakeWordInput(os.Getenv("ASTRO_WAKE_CMD"), newVoice(runner))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "modo wake:", err)
+			return
+		}
+		wake = w
+		defer wake.Close()
+		input = wake
+	default:
+		input = newVoice(runner)
 	}
 
 	// Chirps tipo Wall-E (sox synth). Se apagan con ASTRO_CHIRPS=0; cada sonido se puede
@@ -81,6 +87,9 @@ func main() {
 	go func() {
 		<-sigCh
 		_ = face.Close()
+		if wake != nil {
+			_ = wake.Close()
+		}
 		os.Exit(0)
 	}()
 
@@ -143,6 +152,16 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// newVoice arma la entrada por voz (grabación por silencio + whisper) desde el entorno.
+func newVoice(runner Runner) *VoiceInput {
+	secs, _ := strconv.Atoi(os.Getenv("ASTRO_REC_SECONDS"))
+	vi := NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cli"),
+		os.Getenv("ASTRO_WHISPER_MODEL"), secs)
+	vi.SilencePct = os.Getenv("ASTRO_REC_SILENCE_PCT")
+	vi.TrailSec = os.Getenv("ASTRO_REC_TRAIL_SEC")
+	return vi
 }
 
 // buildMemory arma la memoria persistente. Si el archivo no se puede cargar, loguea y devuelve
