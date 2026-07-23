@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Wrapper ejecutable de la voz Kokoro: corre kokoro_say.py con el python del venv.
+# LD_LIBRARY_PATH (la libstdc++ de gcc, para los wheels de pip en NixOS) lo setea run.sh una vez.
+# Si lo corrés a mano fuera de run.sh, exportá LD_LIBRARY_PATH vos.
+PY="${ASTRO_KOKORO_PY:-$HOME/.venvs/kokoro/bin/python}"
+if [[ ! -x "$PY" ]]; then
+  echo "Falta el venv de Kokoro ($PY). Crealo con:" >&2
+  echo "  python3 -m venv ~/.venvs/kokoro && ~/.venvs/kokoro/bin/pip install kokoro-onnx soundfile" >&2
+  exit 1
+fi
+exec "$PY" "$(dirname "$0")/kokoro_say.py" "$@"
