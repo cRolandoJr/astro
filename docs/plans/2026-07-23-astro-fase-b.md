@@ -26,7 +26,8 @@ No hace falta para las Tasks 1-3 (solo Go). Para probar de verdad en la Task 4:
   agregarlas al flake — momento de enseñanza Nix cuando lleguemos).
 - Modelo whisper `small`: bajar `ggml-small.bin` (script `download-ggml-model.sh small` de whisper.cpp, o
   fetch del release ggerganov/whisper.cpp) → guardar fuera del repo.
-- Voz Piper español: bajar un `.onnx` + `.json` `es_ES` (releases de rhasspy/piper-voices) → fuera del repo.
+- Voz Piper español: bajar un `.onnx` **+ su `.json`** `es_ES` (releases de rhasspy/piper-voices) → fuera del
+  repo. El `.json` va **al lado** del `.onnx` con el mismo nombre (`<voz>.onnx.json`); piper lo carga solo.
 - Env: `ASTRO_WHISPER_BIN`, `ASTRO_WHISPER_MODEL`, `ASTRO_PIPER_BIN`, `ASTRO_PIPER_VOICE`, `ASTRO_EWW_CONFIG`.
 
 ---
@@ -461,29 +462,34 @@ func main() {
 			continue
 		}
 		if text == "" {
-			_ = display.Show(Pensativo)
-			say(voice, "No te escuché, repetí.")
+			respond(display, voice, Pensativo, "No te escuché, repetí.")
 			continue
 		}
 
 		action, err := interpreter.Interpret(text)
 		if errors.Is(err, ErrNoEntiendo) {
-			_ = display.Show(Pensativo)
-			say(voice, "No te entendí.")
+			respond(display, voice, Pensativo, "No te entendí.")
 			continue
 		}
 
 		reply, err := action.Run(runner)
 		if err != nil {
 			_ = display.Show(Neutral)
-			fmt.Println("Ups:", err)
+			fmt.Println("Ups:", err) // error de ejecución: dev-facing, solo pantalla
 			continue
 		}
-		_ = display.Show(action.Face)
-		fmt.Println(reply)
-		say(voice, reply)
+		respond(display, voice, action.Face, reply)
 	}
 	fmt.Println("\nChau 👋")
+}
+
+// respond muestra la cara, IMPRIME el texto y lo dice en voz alta. Imprimir siempre
+// (aunque el TTS esté off) es la degradación que promete la spec §7: si no puede
+// hablar, al menos responde por pantalla. Se usa en las 3 ramas de usuario.
+func respond(d Display, v PiperVoice, face Expression, text string) {
+	_ = d.Show(face)
+	fmt.Println(text)
+	say(v, text)
 }
 
 // say habla, pero si el TTS falla no corta el flujo (ya se mostró el texto).
