@@ -13,7 +13,9 @@ import (
 // httpEmbed devuelve un embedFunc que pega al endpoint OpenAI-compatible /embeddings.
 // Mismo patrón que httpChat: net/http, sin SDK.
 func httpEmbed(baseURL, apiKey, model string) embedFunc {
-	client := &http.Client{Timeout: 20 * time.Second}
+	// Timeout corto: el embed corre en CADA turno (antes del chat). Si el endpoint se cuelga,
+	// mejor rendirse rápido y caer a reglas que dejar el turno esperando 20s.
+	client := &http.Client{Timeout: 5 * time.Second}
 	return func(text string) ([]float32, error) {
 		body, _ := json.Marshal(map[string]any{"model": model, "input": text})
 		url := strings.TrimRight(baseURL, "/") + "/embeddings"
