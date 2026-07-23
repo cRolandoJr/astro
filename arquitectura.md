@@ -143,11 +143,17 @@ un evento (te oye → CURIOSO, responde → FELIZ).
 
 | Fase | Qué | Estado |
 |---|---|---|
-| **A** | Astro en la PC: cara en widget **eww** + comandos por **texto** → acción en la laptop | ✅ hecho (en `main`) |
-| **B** | **Voz**: le hablás (Whisper STT, push-to-talk por Enter) y te **responde hablando** (Piper TTS); la cara se abre/cierra sola | ✅ hecho (rama `fase-b`) |
-| **C** | **Cerebro (Janus):** LLM (DeepSeek/Gemini) interpreta **lenguaje natural** + tool-calling + más tools. Deja de ser comandos fijos. | 🔜 próximo |
-| **D** | **Memoria semántica (RAG):** ChromaDB + embeddings sobre tus notas/`~/Documentos` → Astro responde sobre *lo tuyo* ("que recuerde") | 🔜 |
-| **Orion** | **Dashboard:** evolucionar el hub de eww para centralizar tareas/calendario/estado | 🟡 base existe |
+| **A** | Astro en la PC: cara en widget **eww** + comandos por **texto** → acción en la laptop | ✅ hecho |
+| **B** | **Voz**: le hablás (Whisper STT, push-to-talk) y te **responde hablando** (Piper TTS); cara auto | ✅ hecho |
+| **C** | **Cerebro:** LLM (Gemini free) interpreta **lenguaje natural** → elige acción; fallback a reglas | ✅ hecho |
+| **D** | **"Dice más":** el LLM **redacta las respuestas habladas** (conversa, contesta) en vez de las frases fijas | 🔜 **próximo** |
+| **E** | **Memoria (RAG):** ChromaDB + embeddings sobre tus notas/`~/Documentos` → responde sobre *lo tuyo* | ⏳ |
+| **Orion** | **Dashboard:** evolucionar el hub de eww (tareas/calendario/estado) | 🟡 base existe |
+| **+tools** | Más acciones (buscar web, leer archivos, ventanas finas) — **continuo**, cuando se necesiten | ➕ ongoing |
+
+**Orden acordado del track software:** **D (dice más) → E (memoria) → Orion**, con *+tools* espolvoreadas
+cuando pinten. Criterio: D es chica y es la que más hace *sentir* al asistente (reusa el LLM de C); E es
+la más grande (setup de RAG); Orion es track visual aparte.
 
 **Track hardware (el robot físico) — paralelo, cuando compres las piezas:**
 
@@ -161,8 +167,8 @@ La lógica (A→B→C→D) **corre sin el robot**; el hardware es "otra pantalla
 (mismo protocolo `FACE/ARMS/SPEAK`, §7). Orden pragmático: seguir el track software; el robot cuando
 haya presupuesto y ganas.
 
-**Próximo salto a elegir:** **Fase C (cerebro LLM)** — convierte a Astro de comandos fijos en agente —
-o **Fase D (memoria)** — le da RAG sobre tu contenido. C habilita el "entiende cualquier cosa"; D el "recuerda".
+**Próximo:** **Fase D — "dice más"**: hoy Astro entiende (C) pero responde frases fijas; en D el LLM
+**redacta la respuesta** que después Piper habla → conversa y contesta. Es el complemento natural de C.
 
 ## 9. Costos
 
