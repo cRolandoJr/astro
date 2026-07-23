@@ -23,23 +23,20 @@ que el mentor marcó). La interfaz `Interpreter`, la voz, la cara, la seguridad 
 
 ### Task 1: Grabación por silencio (VAD) en `input.go`
 
-**Files:** Modify `input.go`; Create `input_test.go`
+**Files:** Modify `input.go`, `input_test.go` (⚠️ **ya existe** — NO crear)
 **Produces:** `VoiceInput.capture()` graba con `sox rec` + `silence` (tope duro con `timeout`).
 
-- [ ] **Step 1: Test que falla (`input_test.go`)**
+- [ ] **Step 1: Modificar los tests (`input_test.go` ya existe)**
+
+El archivo ya tiene `TestCleanTranscript` (**dejalo intacto**) y `TestVoiceInputCaptureArmaComandosYLimpia`
+(usa `RecSeconds`/`arecord` — hay que reemplazarlo). Pasos:
+- Agregá `"fmt"` al bloque de imports (`reflect` y `testing` ya están).
+- **Reemplazá** `TestVoiceInputCaptureArmaComandosYLimpia` por los dos tests de abajo. **Conservá** `TestCleanTranscript`.
 
 ```go
-package main
-
-import (
-	"fmt"
-	"reflect"
-	"testing"
-)
-
 func TestVoiceCaptureGrabaHastaSilencio(t *testing.T) {
 	fake := &fakeRunner{}
-	v := &VoiceInput{
+	v := VoiceInput{
 		Runner: fake, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
 		WavPath: "/tmp/astro-in.wav", MaxSeconds: 30,
 		ReadFile: func(string) ([]byte, error) { return []byte("hola astro"), nil },
@@ -51,17 +48,25 @@ func TestVoiceCaptureGrabaHastaSilencio(t *testing.T) {
 	if got != "hola astro" {
 		t.Fatalf("esperaba la transcripción, fue %q", got)
 	}
-	// primer comando: timeout <max> rec ... silence ...
-	want := []string{"timeout", "30", "rec", "-q", "-c", "1", "-r", "16000", "/tmp/astro-in.wav",
+	if len(fake.calls) != 2 {
+		t.Fatalf("esperaba 2 comandos (rec, whisper), hubo %d: %v", len(fake.calls), fake.calls)
+	}
+	// comando 0: timeout <max> rec ... silence ...
+	wantRec := []string{"timeout", "30", "rec", "-q", "-c", "1", "-r", "16000", "/tmp/astro-in.wav",
 		"silence", "1", "0.1", "3%", "1", "1.5", "3%"}
-	if got := fake.calls[0]; !reflect.DeepEqual(got, want) {
-		t.Fatalf("comando de grabación:\n esperaba %v\n fue      %v", want, got)
+	if !reflect.DeepEqual(fake.calls[0], wantRec) {
+		t.Fatalf("comando de grabación:\n esperaba %v\n fue      %v", wantRec, fake.calls[0])
+	}
+	// comando 1: whisper (armado que se conserva de la versión anterior)
+	wantWhisper := []string{"whisper-cli", "-m", "m.bin", "-f", "/tmp/astro-in.wav", "-l", "es", "-nt", "-otxt", "-of", "/tmp/astro-in"}
+	if !reflect.DeepEqual(fake.calls[1], wantWhisper) {
+		t.Fatalf("comando whisper:\n esperaba %v\n fue      %v", wantWhisper, fake.calls[1])
 	}
 }
 
 func TestVoiceCaptureErrorSiRecFalla(t *testing.T) {
 	fake := &fakeRunner{err: fmt.Errorf("device busy")}
-	v := &VoiceInput{Runner: fake, WavPath: "/tmp/x.wav"}
+	v := VoiceInput{Runner: fake, WavPath: "/tmp/x.wav"}
 	if _, err := v.capture(); err == nil {
 		t.Fatal("esperaba error si rec falla")
 	}
@@ -112,7 +117,7 @@ func NewVoiceInput(r Runner, whisperBin, whisperModel string, maxSeconds int) *V
 	if _, err := v.Runner.Run("timeout", strconv.Itoa(maxSecs),
 		"rec", "-q", "-c", "1", "-r", "16000", v.WavPath,
 		"silence", "1", "0.1", thresh, "1", trail, thresh); err != nil {
-		return "", fmt.Errorf("no pude grabar (¿sox/rec + PipeWire?): %w", err)
+		return "", fmt.Errorf("no pude grabar (¿sox/rec + timeout/coreutils + PipeWire?): %w", err)
 	}
 ```
 (El resto de `capture()` —whisper, ReadFile, cleanTranscript, `entendí: %q`— queda **igual**.)
@@ -369,6 +374,16 @@ func TestLLMHistorialRecortaAVentana(t *testing.T) {
 		t.Fatalf("la ventana debía recortar a 2 turnos, fue %d", len(li.history))
 	}
 }
+
+func TestLLMNoRegistraTurnoRechazado(t *testing.T) {
+	// open con arg peligroso → cae al fallback → NO debe quedar en el historial (spec §4).
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := newLLMClock(fakeChat(`{"action":"open","arg":"firefox; rm -rf ~","say":"abriendo"}`, nil), clock)
+	li.Interpret("abrí firefox; rm -rf ~")
+	if len(li.history) != 0 {
+		t.Fatalf("un turno rechazado por seguridad no debe registrarse; historial=%v", li.history)
+	}
+}
 ```
 
 - [ ] **Step 2: Correr — falla**
@@ -390,10 +405,31 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 ```
 (el resto sigue: recall de memoria, chat, parseo…).
 
-3b. Tras el parseo exitoso del JSON (justo después del `if jerr := json.Unmarshal(...)` que cae a fallback),
-antes de los `if` de ruteo, registrá el turno:
+3b. Registrá el turno **solo en los returns genuinos** (no en los dos fallbacks post-parseo, que van a
+reglas — así no se contamina el historial con turnos rechazados; spec §4). Reemplazá el bloque de ruteo
+(desde `if (choice.Action == "" || choice.Action == "none") …` hasta el `return li.fallback.Interpret(text)`
+final) por:
 ```go
-	li.remember(text, choice.Say)
+	if (choice.Action == "" || choice.Action == "none") && choice.Say != "" {
+		li.remember(text, choice.Say)
+		return sayAction(choice.Say), nil
+	}
+	if choice.Action == "recordar" && li.mem != nil && choice.Arg != "" {
+		li.remember(text, choice.Say)
+		return wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), nil
+	}
+	if choice.Action == "open" {
+		if !isSafeAppName(choice.Arg) {
+			return li.fallback.Interpret(text) // rechazo de seguridad → NO se registra
+		}
+		li.remember(text, choice.Say)
+		return wrap(openAppAction(choice.Arg), choice.Say), nil
+	}
+	if a, ok := li.actions[choice.Action]; ok {
+		li.remember(text, choice.Say)
+		return wrap(a, choice.Say), nil
+	}
+	return li.fallback.Interpret(text) // acción desconocida → NO se registra
 ```
 
 3c. Agregá el helper al final de `llm.go`:
@@ -461,6 +497,18 @@ astro   # (o los exports de siempre + run)
 Probar: (a) una frase **corta** y una **larga** → graba completo y corta sola al callarte (no a los 4s);
 (b) *"subí el volumen"* → *"un poco más"* → lo toma como seguimiento; (c) esperar >5 min y hablar → charla nueva.
 
+**Gatillo — SOLO si en (a) Astro se APAGA con ruido de fondo** (el tope `timeout` mata `rec` con exit 124 →
+`capture` devuelve error → `main` hace `break` → sale). Recién ahí, traducir el 124 a turno vacío para que el
+loop siga ("No te escuché") en vez de apagarse. En `capture`, en el error de `rec`:
+```go
+var ee *exec.ExitError
+if errors.As(err, &ee) && ee.ExitCode() == 124 {
+	return "", nil // tope alcanzado → main dice "No te escuché" y sigue, no apaga
+}
+```
+(agrega imports `errors` + `os/exec` en `input.go`; y un test del chequeo con un `*exec.ExitError` real de
+`exec.Command("sh", "-c", "exit 124").Run()`). Si (a) NO apaga Astro, no se toca — no metemos código sin evidencia.
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -481,7 +529,7 @@ git commit -m "feat: wiring de envs de grabación (VAD) e historial multi-turno 
 
 - **Cobertura del spec:** Parte A → Task 1; seam+config → Task 2; comportamiento multi-turno → Task 3; envs+E2E → Task 4.
 - **Compila en cada tarea:** Task 1 no toca la firma de `NewVoiceInput` (solo renombra campo interno). Task 2 actualiza TODOS los call sites (`fakeChat`, helpers, closure inline, `main`) → verde como refactor no-op. Task 3 enciende el comportamiento. Task 4 solo agrega envs.
-- **Tope duro (anti-cuelgue):** `timeout <max>` antepuesto; en uso normal `rec` corta por silencio (exit 0); si nunca hay silencio, `timeout` corta (turno falla y se reintenta, no cuelga).
+- **Tope duro (anti-cuelgue):** `timeout <max>` antepuesto; en uso normal `rec` corta por silencio (exit 0). Si nunca hay silencio (ruido sostenido > umbral), `timeout` mata `rec` (exit 124) → `capture` devuelve error → `main` hace `break` y **Astro sale** (mismo path que un fallo de `arecord` hoy; NO reintenta). Aceptado como borde; si el E2E lo muestra, se aplica el fix gatillado (Task 4 Step 3).
 - **Reset determinista:** `fakeClock` inyectado → los tests de inactividad no esperan tiempo real.
 - **No verde-falso:** los tests capturan el historial REAL pasado al chat y afirman su contenido; el reset y el recorte se verifican por longitud/contenido, no por "no crashea".
 - **Config struct:** cruza el umbral de params que el mentor marcó (Fase E: "6º parámetro → LLMConfig"); Fase F suma `now/historyTurns/idleWindow`, así que el salto está justificado, no especulativo.
