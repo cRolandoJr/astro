@@ -39,21 +39,26 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	var choice struct {
 		Action string `json:"action"`
 		Arg    string `json:"arg"`
+		Say    string `json:"say"`
 	}
 	if jerr := json.Unmarshal([]byte(extractJSON(reply)), &choice); jerr != nil {
 		fmt.Fprintln(os.Stderr, "(respuesta LLM no-JSON, uso reglas:", reply, ")")
 		return li.fallback.Interpret(text)
 	}
+	// Charla pura: sin acción (o "none") pero con say → solo hablar.
+	if (choice.Action == "" || choice.Action == "none") && choice.Say != "" {
+		return sayAction(choice.Say), nil
+	}
 	if choice.Action == "open" {
 		if !isSafeAppName(choice.Arg) {
 			return li.fallback.Interpret(text) // arg peligroso → no por acá
 		}
-		return openAppAction(choice.Arg), nil
+		return wrap(openAppAction(choice.Arg), choice.Say), nil
 	}
 	if a, ok := li.actions[choice.Action]; ok {
-		return a, nil
+		return wrap(a, choice.Say), nil
 	}
-	return li.fallback.Interpret(text) // acción desconocida / "none" → reglas
+	return li.fallback.Interpret(text) // ni acción ni say → reglas
 }
 
 // systemPrompt arma el menú de acciones para el LLM (orden estable).
@@ -126,4 +131,25 @@ func httpChat(baseURL, apiKey, model string) chatFunc {
 		}
 		return out.Choices[0].Message.Content, nil
 	}
+}
+
+// wrap devuelve una acción que corre el efecto de 'base' pero habla 'say' (lo que
+// redactó el LLM) en vez de la frase fija. Si say=="", devuelve base tal cual (compat).
+func wrap(base *Action, say string) *Action {
+	if say == "" {
+		return base
+	}
+	return &Action{Name: base.Name, Desc: base.Desc, Face: base.Face,
+		Run: func(r Runner) (string, error) {
+			if _, err := base.Run(r); err != nil {
+				return "", err
+			}
+			return say, nil
+		}}
+}
+
+// sayAction devuelve una acción que SOLO habla 'say' (charla; no toca la máquina).
+func sayAction(say string) *Action {
+	return &Action{Name: "decir", Face: Feliz,
+		Run: func(r Runner) (string, error) { return say, nil }}
 }
