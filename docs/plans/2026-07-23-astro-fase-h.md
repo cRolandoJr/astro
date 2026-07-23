@@ -32,8 +32,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
-	"io"
 	"strings"
 	"testing"
 )
@@ -59,11 +57,11 @@ func TestWakeWordListenDisparaCapturaTrasEvento(t *testing.T) {
 	}
 }
 
-func TestWakeWordListenSidecarMuertoDevuelveEOF(t *testing.T) {
-	// stdout cerrado/vacío = el sidecar murió → Scan false sin error → EOF (main corta limpio)
+func TestWakeWordListenSidecarMuertoReporta(t *testing.T) {
+	// stdout cerrado/vacío = el sidecar murió → Scan false sin error → error descriptivo (falla ruidosa)
 	w := &WakeWordInput{events: bufio.NewScanner(strings.NewReader("")), voice: &VoiceInput{Runner: &fakeRunner{}}}
-	if _, err := w.Listen(); !errors.Is(err, io.EOF) {
-		t.Fatalf("sidecar muerto debía devolver io.EOF, fue %v", err)
+	if _, err := w.Listen(); err == nil {
+		t.Fatal("sidecar muerto (stdout cerrado) debía devolver error, no salida limpia")
 	}
 }
 
@@ -86,7 +84,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 )
@@ -123,18 +120,21 @@ func (w *WakeWordInput) Listen() (string, error) {
 		if err := w.events.Err(); err != nil {
 			return "", err
 		}
-		return "", io.EOF // el sidecar cerró su stdout (murió) → fin del loop
+		// stdout cerrado = el sidecar murió. NO es un quit limpio (a diferencia de Ctrl+D en stdin):
+		// es una falla → error descriptivo para que main lo reporte, no io.EOF silencioso.
+		return "", fmt.Errorf("el sidecar de wake murió (cerró su stdout)")
 	}
 	fmt.Println("👂 ¡te escucho!")
 	return w.voice.capture()
 }
 
-// Close mata el sidecar. main lo llama con defer y en el handler de señal (para no dejarlo colgado).
+// Close mata el sidecar y lo cosecha. main lo llama con defer y en el handler de señal.
 func (w *WakeWordInput) Close() error {
 	if w.cmd == nil || w.cmd.Process == nil {
 		return nil
 	}
-	return w.cmd.Process.Kill()
+	_ = w.cmd.Process.Kill()
+	return w.cmd.Wait() // cosecha el zombie + cierra el pipe (completa el contrato de Start/StdoutPipe)
 }
 ```
 
@@ -257,6 +257,8 @@ Agregá al final de `secrets.env.example`:
 # Modo wake-word (ASTRO_INPUT=wake) — solo si usás activación por voz:
 # export PICOVOICE_ACCESS_KEY='tu-access-key-free-de-picovoice'
 # export ASTRO_WAKE_PPN="$HOME/modelos/astro.ppn"   # modelo custom generado en la consola de Picovoice
+# IMPORTANTE: ASTRO_WAKE_CMD debe ser UN SOLO comando ejecutable (sin 'source … &&', sin pipes).
+# Si es multi-comando, al cerrar Astro se mata solo el shell y el python queda huérfano con el micro.
 # export ASTRO_WAKE_CMD='python '"$PWD"'/scripts/wake.py'
 ```
 
@@ -298,7 +300,7 @@ git commit -m "feat: modo wake (ASTRO_INPUT=wake) — wiring + sidecar Porcupine
 - **Cobertura del spec:** `WakeWordInput` + seam + Close → Task 1; wiring `ASTRO_INPUT=wake` + ciclo de vida + sidecar de referencia + secreto → Task 2.
 - **Seam testeable:** los tests construyen `WakeWordInput` con un `bufio.Scanner` sobre `strings.Reader` + `VoiceInput{fakeRunner}` → `Listen()` verificado sin micrófono ni motor (white-box, mismo paquete, como el resto del repo).
 - **Long-lived vía os/exec directo:** justificado (un stream continuo no encaja en `Runner.Run`, que corre-hasta-terminar); sigue siendo stdlib.
-- **Fallas ruidosas:** sidecar muerto → `Scan` false → `io.EOF` → `main` corta y reporta (no silenciosa). Sin cmd → error al construir → `return` (no arranca a medias).
-- **Ciclo de vida:** `defer wake.Close()` (salida normal) + cierre en el handler de señal (Ctrl+C) → no queda el sidecar colgado tomando el micro. `Close` es nil-safe (cmd/Process nil).
+- **Fallas ruidosas:** sidecar muerto → `Scan` false → **error descriptivo** (no `io.EOF`, que main trataría como quit limpio y silencioso) → `main` imprime "entrada: …" y corta. Sin cmd → error al construir → `return` (no arranca a medias).
+- **Ciclo de vida:** `Close` = `Kill()` + `Wait()` (cosecha el zombie + cierra el pipe); `defer wake.Close()` (salida normal) + cierre en el handler de señal (Ctrl+C). `Close` nil-safe. Restricción documentada: `ASTRO_WAKE_CMD` = un solo comando ejecutable (si no, `Kill` sobre `sh -c` orfanaría el python) — gatillo si aparece: `Setpgid` + `syscall.Kill(-pid)`.
 - **No rompe lo previo:** el `default` del switch reusa el `newVoice` extraído (mismo comportamiento Enter); `stdin` igual; solo se agrega `wake`.
 - **Bordes diferidos (spec):** re-trigger durante captura y contención de micro → validar/gatillar en E2E, no código especulativo ahora.

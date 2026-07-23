@@ -67,7 +67,7 @@ El plan incluye un sidecar de referencia (Porcupine); el usuario provee el model
 ## 5. Configuración y lo que provee el usuario
 
 - `ASTRO_INPUT=wake` → activa el modo wake-word (default sigue siendo Enter/VoiceInput; `stdin` para debug).
-- `ASTRO_WAKE_CMD` → comando para lanzar el sidecar (ej. `python <ruta>/wake.py`). Si falta en modo wake → error claro al arranque.
+- `ASTRO_WAKE_CMD` → comando para lanzar el sidecar (ej. `python <ruta>/wake.py`). Si falta en modo wake → error claro al arranque. **Debe ser UN SOLO comando ejecutable** (sin `source … &&`, sin pipes): al cerrar, `Kill()` mata solo el `sh -c`, y un multi-comando dejaría el motor huérfano con el micro. Gatillo si hace falta multi-comando: process group (`Setpgid` + `syscall.Kill(-pid)`).
 - El **modelo** de wake-word y su **key** (si el motor la pide, ej. Porcupine) los provee el usuario, vía el
   sidecar / env (ej. `PICOVOICE_ACCESS_KEY` en `secrets.env`, nunca versionado). El repo versiona el **script**
   del sidecar, no el modelo ni la key.
