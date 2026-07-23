@@ -10,12 +10,12 @@ import (
 )
 
 func fakeChat(reply string, err error) chatFunc {
-	return func(system, user string) (string, error) { return reply, err }
+	return func(system string, history []Exchange, user string) (string, error) { return reply, err }
 }
 
 func newLLM(chat chatFunc) *LLMInterpreter {
 	acts := buildActions(time.Now)
-	return NewLLMInterpreter(chat, acts, NewRuleInterpreter(acts), nil, 5)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts)})
 }
 
 // fakeMemory: MemoryStore de test. Registra lo guardado y devuelve un Recall fijo.
@@ -35,7 +35,7 @@ func (f *fakeMemory) Recall(query string, k int) ([]string, error) {
 
 func newLLMWithMem(chat chatFunc, mem MemoryStore) *LLMInterpreter {
 	acts := buildActions(time.Now)
-	return NewLLMInterpreter(chat, acts, NewRuleInterpreter(acts), mem, 5)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts), Mem: mem})
 }
 
 func TestLLMRecordarGuardaElHecho(t *testing.T) {
@@ -68,7 +68,7 @@ func TestLLMRecordarSinMemVaAFallback(t *testing.T) {
 func TestLLMInyectaHechosAlPrompt(t *testing.T) {
 	mem := &fakeMemory{recall: []string{"el usuario usa NixOS"}}
 	var seenSystem string
-	chat := func(system, user string) (string, error) {
+	chat := func(system string, history []Exchange, user string) (string, error) {
 		seenSystem = system
 		return `{"action":"none","say":"ok"}`, nil
 	}
