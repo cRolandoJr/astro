@@ -22,14 +22,28 @@ type LLMInterpreter struct {
 	chat     chatFunc
 	actions  map[string]*Action
 	fallback Interpreter
+	mem      MemoryStore // opcional (nil = sin memoria)
+	topK     int
 }
 
-func NewLLMInterpreter(chat chatFunc, actions map[string]*Action, fallback Interpreter) *LLMInterpreter {
-	return &LLMInterpreter{chat: chat, actions: actions, fallback: fallback}
+func NewLLMInterpreter(chat chatFunc, actions map[string]*Action, fallback Interpreter, mem MemoryStore, topK int) *LLMInterpreter {
+	if topK <= 0 {
+		topK = 5
+	}
+	return &LLMInterpreter{chat: chat, actions: actions, fallback: fallback, mem: mem, topK: topK}
 }
 
 func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
-	reply, err := li.chat(li.systemPrompt(), text)
+	var facts []string
+	if li.mem != nil {
+		f, err := li.mem.Recall(text, li.topK)
+		if err != nil { // recuperar falló → sigo sin hechos (no rompo el turno)
+			fmt.Fprintln(os.Stderr, "(memoria falló al recuperar, sigo sin hechos:", err, ")")
+		} else {
+			facts = f
+		}
+	}
+	reply, err := li.chat(li.systemPrompt(facts), text)
 	if err != nil {
 		// Logueamos: un fallback silencioso daría "verde falso" (las reglas rescatan
 		// comandos con keyword y no te enterarías de que el LLM está muerto).
@@ -49,6 +63,9 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	if (choice.Action == "" || choice.Action == "none") && choice.Say != "" {
 		return sayAction(choice.Say), nil
 	}
+	if choice.Action == "recordar" && li.mem != nil && choice.Arg != "" {
+		return wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), nil
+	}
 	if choice.Action == "open" {
 		if !isSafeAppName(choice.Arg) {
 			return li.fallback.Interpret(text) // arg peligroso → no por acá
@@ -61,14 +78,21 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	return li.fallback.Interpret(text) // ni acción ni say → reglas
 }
 
-// systemPrompt arma el menú de acciones para el LLM (orden estable).
-func (li *LLMInterpreter) systemPrompt() string {
+// systemPrompt arma el prompt: instrucciones + hechos recuperados (si hay) + menú (orden estable).
+func (li *LLMInterpreter) systemPrompt(facts []string) string {
 	var b strings.Builder
 	b.WriteString("Sos Astro, un asistente de escritorio con voz. El usuario te habla en español. ")
 	b.WriteString("Respondé SOLO un JSON: {\"action\":\"<opcional>\",\"arg\":\"<opcional>\",\"say\":\"<respuesta hablada>\"}. ")
 	b.WriteString("Si es un COMANDO, elegí un `action` del menú y un `say` corto de confirmación. ")
 	b.WriteString("Si es CHARLA o una pregunta, usá action:\"none\" y contestá en `say`. ")
-	b.WriteString("El `say` se lee en voz alta: que sea BREVE (1-2 frases), natural y en español. Menú:\n")
+	b.WriteString("El `say` se lee en voz alta: que sea BREVE (1-2 frases), natural y en español.\n")
+	if len(facts) > 0 {
+		b.WriteString("Esto es lo que sé del usuario (usalo si viene al caso):\n")
+		for _, f := range facts {
+			fmt.Fprintf(&b, "- %s\n", f)
+		}
+	}
+	b.WriteString("Menú:\n")
 	names := make([]string, 0, len(li.actions))
 	for n := range li.actions {
 		names = append(names, n)
@@ -78,6 +102,9 @@ func (li *LLMInterpreter) systemPrompt() string {
 		fmt.Fprintf(&b, "- %s: %s\n", n, li.actions[n].Desc)
 	}
 	b.WriteString("- open (arg = nombre de la app): abrir una app o programa\n")
+	if li.mem != nil {
+		b.WriteString("- recordar (arg = el hecho a recordar): guardá algo que el usuario te pide recordar\n")
+	}
 	return b.String()
 }
 
@@ -153,4 +180,16 @@ func wrap(base *Action, say string) *Action {
 func sayAction(say string) *Action {
 	return &Action{Name: "decir", Face: Feliz,
 		Run: func(r Runner) (string, error) { return say, nil }}
+}
+
+// memoryWriteAction guarda 'text' en la memoria. No toca el Runner (como sayAction); el say
+// hablado lo pone wrap() con lo que redactó el LLM.
+func memoryWriteAction(mem MemoryStore, text string) *Action {
+	return &Action{Name: "recordar", Face: Feliz,
+		Run: func(r Runner) (string, error) {
+			if err := mem.Remember(text); err != nil {
+				return "", err
+			}
+			return "", nil
+		}}
 }

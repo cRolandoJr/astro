@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,10 +20,13 @@ func main() {
 	rules := NewRuleInterpreter(acts)
 	var interpreter Interpreter = rules
 	if os.Getenv("ASTRO_BRAIN") != "rules" { // default: cerebro LLM (con fallback a reglas)
+		llmURL := os.Getenv("ASTRO_LLM_URL")
+		llmKey := os.Getenv("ASTRO_LLM_KEY")
+		embed := httpEmbed(llmURL, llmKey, envOr("ASTRO_EMBED_MODEL", "text-embedding-004"))
+		topK, _ := strconv.Atoi(os.Getenv("ASTRO_MEM_TOPK"))
 		interpreter = NewLLMInterpreter(
-			httpChat(os.Getenv("ASTRO_LLM_URL"), os.Getenv("ASTRO_LLM_KEY"),
-				envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
-			acts, rules)
+			httpChat(llmURL, llmKey, envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
+			acts, rules, buildMemory(embed), topK)
 	}
 
 	// Salida de voz (si no hay piper configurado, degradamos a solo-texto).
@@ -129,4 +133,24 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// buildMemory arma la memoria persistente. Si el archivo no se puede cargar, loguea y devuelve
+// nil (Astro sigue funcionando, sin memoria) — nunca aborta el daemon.
+func buildMemory(embed embedFunc) MemoryStore {
+	path := os.Getenv("ASTRO_MEM_PATH")
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "(sin HOME, memoria off:", err, ")")
+			return nil
+		}
+		path = filepath.Join(home, ".local", "share", "astro", "memory.json")
+	}
+	mem, err := NewFileMemory(path, embed)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "(no pude cargar la memoria, sigo sin ella:", err, ")")
+		return nil
+	}
+	return mem
 }
