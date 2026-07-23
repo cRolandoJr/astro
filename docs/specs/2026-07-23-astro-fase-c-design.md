@@ -54,8 +54,11 @@ temperature:0}`, y devuelve `choices[0].message.content`. En tests se inyecta un
 ## 4. Configuración (env)
 
 - `ASTRO_BRAIN` = `llm` (default) | `rules`.
-- `ASTRO_LLM_URL` (ej. `https://api.deepseek.com`), `ASTRO_LLM_KEY`, `ASTRO_LLM_MODEL` (ej. `deepseek-chat`).
-- Model-agnostic: apuntás a Gemini/OpenRouter/otro cambiando esas 3.
+- `ASTRO_LLM_URL`, `ASTRO_LLM_KEY`, `ASTRO_LLM_MODEL`. **Default para arrancar gratis — Gemini free tier:**
+  - `ASTRO_LLM_URL=https://generativelanguage.googleapis.com/v1beta/openai`
+  - `ASTRO_LLM_KEY=<key de aistudio.google.com>` (sin tarjeta)
+  - `ASTRO_LLM_MODEL=gemini-2.5-flash` (o el Flash más nuevo que liste AI Studio)
+- Model-agnostic: cambiás a DeepSeek/OpenRouter/otro tocando esas 3 (todos OpenAI-compat).
 
 ## 5. Manejo de errores (sin crash, con degradación)
 
@@ -84,7 +87,8 @@ temperature:0}`, y devuelve `choices[0].message.content`. En tests se inyecta un
 
 ## 8. Decisiones (defaults, vetables en revisión)
 
-- Proveedor default **DeepSeek** vía OpenAI-compat; **JSON mode** + `temperature 0` (determinista).
+- Proveedor default para arrancar: **Gemini free tier** (AI Studio, sin tarjeta) vía OpenAI-compat;
+  **JSON mode** + `temperature 0` (determinista). Free = familia Flash; ~1.500 req/día alcanzan de sobra.
 - `ASTRO_BRAIN=llm` por default; `rules` conserva el comportamiento de Fase A.
 - **Fallback a reglas** (reusa lo de Fase A como red de seguridad — nada se desperdicia).
 - `Desc` en `Action` para armar el menú; "open" es una pseudo-acción con arg (como ya lo maneja el RuleInterpreter).
