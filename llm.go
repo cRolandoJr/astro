@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 // chatFunc habla con el LLM: recibe prompt de sistema + texto del usuario, devuelve la
@@ -79,4 +83,47 @@ func extractJSON(s string) string {
 		return s
 	}
 	return s[i : j+1]
+}
+
+// httpChat devuelve un chatFunc que pega a un endpoint OpenAI-compatible (chat completions).
+func httpChat(baseURL, apiKey, model string) chatFunc {
+	client := &http.Client{Timeout: 20 * time.Second}
+	return func(system, user string) (string, error) {
+		body, _ := json.Marshal(map[string]any{
+			"model":           model,
+			"temperature":     0,
+			"response_format": map[string]string{"type": "json_object"},
+			"messages": []map[string]string{
+				{"role": "system", "content": system},
+				{"role": "user", "content": user},
+			},
+		})
+		url := strings.TrimRight(baseURL, "/") + "/chat/completions"
+		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			return "", fmt.Errorf("LLM HTTP %d: %s", resp.StatusCode, string(raw))
+		}
+		var out struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil || len(out.Choices) == 0 {
+			return "", fmt.Errorf("respuesta LLM inesperada: %s", string(raw))
+		}
+		return out.Choices[0].Message.Content, nil
+	}
 }
