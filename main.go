@@ -26,7 +26,7 @@ func main() {
 		input = NewStdinInput()
 	} else {
 		secs, _ := strconv.Atoi(os.Getenv("ASTRO_REC_SECONDS"))
-		input = NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cpp"),
+		input = NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cli"),
 			os.Getenv("ASTRO_WHISPER_MODEL"), secs)
 	}
 
