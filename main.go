@@ -35,12 +35,13 @@ func main() {
 
 	for {
 		text, err := input.Listen()
-		if errors.Is(err, io.EOF) {
-			break
-		}
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "entrada:", err)
-			continue
+			// EOF real = salida normal (Ctrl+D); cualquier otro error de lectura
+			// también corta el loop, pero se reporta (no es una salida esperada).
+			if !errors.Is(err, io.EOF) {
+				fmt.Fprintln(os.Stderr, "entrada:", err)
+			}
+			break
 		}
 		if text == "" {
 			respond(display, voice, Pensativo, "No te escuché, repetí.")

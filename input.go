@@ -23,6 +23,9 @@ func NewStdinInput() *StdinInput { return &StdinInput{scanner: bufio.NewScanner(
 func (s *StdinInput) Listen() (string, error) {
 	fmt.Print("> ")
 	if !s.scanner.Scan() {
+		if err := s.scanner.Err(); err != nil {
+			return "", err
+		}
 		return "", io.EOF
 	}
 	return s.scanner.Text(), nil
@@ -50,6 +53,9 @@ func NewVoiceInput(r Runner, whisperBin, whisperModel string, recSeconds int) *V
 func (v *VoiceInput) Listen() (string, error) {
 	fmt.Print("[Enter] para hablar (Ctrl+D para salir) ")
 	if !v.trigger.Scan() {
+		if err := v.trigger.Err(); err != nil {
+			return "", err
+		}
 		return "", io.EOF
 	}
 	return v.capture()

@@ -76,10 +76,12 @@ func containsAny(s string, subs ...string) bool {
 	return false
 }
 
-// normalize: minúsculas, sin espacios extra y sin tildes (comandos de terminal a menudo van sin tilde).
+// normalize: minúsculas, sin espacios extra, sin tildes (comandos de terminal a menudo
+// van sin tilde) y sin puntuación final (whisper le agrega punto a "abrí firefox").
 func normalize(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
-	return strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ü", "u").Replace(s)
+	s = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ü", "u").Replace(s)
+	return strings.TrimRight(s, " .,;:!?¡¿")
 }
 
 // isSafeAppName valida que el nombre de app a pasar a `hyprctl dispatch exec` sea un
