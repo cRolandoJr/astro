@@ -12,6 +12,35 @@ Compañero de escritorio con **cara expresiva + brazos + voz propia**, que **ent
 que le decís** y **actúa en tu laptop** (abrir apps, mover ventanas entre monitores,
 media, etc.). El **cerebro vive en la laptop**; el robot es la **cara/voz/manos**.
 
+## 1b. Visión ampliada — hacia un asistente personal tipo "Janus"
+
+Inspiración: el ecosistema de IA de **Nate Gentile** (Orion = dashboard/"SO" operativo; Janus =
+agente con acceso por API a todas sus herramientas, sobre LLM en server privado; Fama = follow-up de
+equipo; todo sobre un server local RTX 6000 / 96GB + base vectorial de su contenido). **Astro es el
+germen de eso, a escala personal:** un agente de voz que maneja tu laptop, responde sobre *tus* datos,
+con tu dashboard. Misma **forma** que Janus, pero **cloud-brain y de un solo usuario**.
+
+**Mapeo honesto (qué copiamos / sustituimos / salteamos):**
+
+| Nate | Qué es | Versión de Astro | Nota |
+|---|---|---|---|
+| **Janus** | agente LLM + wrappers de API a sus tools | Astro con LLM + tool-calling (Fase C) | el camino ya trazado |
+| **Base semántica** | vector DB de su historial (ChromaDB) | RAG local: indexar tus notas/docs (Fase D) | factible en tu laptop |
+| **Orion** | dashboard central (tareas/calendario/stats) | evolucionar tu **hub de eww** + khal | base ya existe |
+| **Middleware Python** | "capa intermedia" API wrappers | tu **capa de `Action`** en Go | en marcha |
+| **Fama** | follow-up de equipo | — | salteado (no hay equipo) |
+| **Server RTX 6000 / LLM local** | modelos pesados on-prem | **API en la nube barata** | tu hardware no da, y no hace falta |
+
+**Reality-checks (límites reales, resueltos):**
+1. **LLM local NO** — la RX 6500M (~4GB) no corre modelos pesados. Nate usa local por privacidad +
+   costo a escala de empresa; para uso personal, **API cloud (DeepSeek/Gemini) es mejor** (centavos/mes).
+2. **Claude corporativo no se usa** — el daemon pega a una **API key personal** (sin dependencia del trabajo).
+3. **Escala de una persona** — nada de Fama ni infra de equipo; "algo así" = agente de voz personal por fases.
+
+**Ángulo de carrera:** Nate llama a esto **"implementador de sistemas"** (integrar IAs en empresas chicas;
+requiere redes + Python + automatización de APIs). Es **tu carril DevOps casi textual** → construir
+Astro-como-Janus es **práctica real** de ese perfil emergente y un portfolio concreto, no una distracción.
+
 ## 2. Principios (las reglas que mandan)
 
 1. **La IA decide, tu código ejecuta.** El LLM solo elige *qué* acción; el daemon corre
@@ -108,20 +137,32 @@ Las **expresiones automáticas por contexto** (reposo→parpadeo/pensativo/dormi
 las decide el firmware con `updateFace()`; el daemon solo pisa con un gesto cuando hay
 un evento (te oye → CURIOSO, responde → FELIZ).
 
-## 8. Roadmap por fases (cada una anda sola)
+## 8. Roadmap por fases (estado real)
 
-| Fase | Qué | Depende de |
+**Track software (en la laptop) — lo que se está construyendo:**
+
+| Fase | Qué | Estado |
 |---|---|---|
-| **0** | Robot base: cara + gestos + música, por USB (tutorial v1→v2) | nada |
-| **1** | Firmware entiende comandos (`FACE/ARMS`) por USB y reacciona | 0 |
-| **2** | Daemon Go v1: **push-to-talk** (botón) → Whisper → **set de tools fijas** → actúa en la laptop → Piper responde por parlantes de la laptop | 1 |
-| **3** | **Voz del robot**: parlante I2S en el ESP32 + lip-sync | 2 |
-| **4** | **Cortar el cable de datos**: pasar el enlace a WiFi | 3 |
-| **5** | **Intención con LLM** (lenguaje natural) detrás de la interfaz + más tools | 2 |
-| **6** | Extras: wake-word (sacar el botón), micro en el robot, más contexto | 5 |
+| **A** | Astro en la PC: cara en widget **eww** + comandos por **texto** → acción en la laptop | ✅ hecho (en `main`) |
+| **B** | **Voz**: le hablás (Whisper STT, push-to-talk por Enter) y te **responde hablando** (Piper TTS); la cara se abre/cierra sola | ✅ hecho (rama `fase-b`) |
+| **C** | **Cerebro (Janus):** LLM (DeepSeek/Gemini) interpreta **lenguaje natural** + tool-calling + más tools. Deja de ser comandos fijos. | 🔜 próximo |
+| **D** | **Memoria semántica (RAG):** ChromaDB + embeddings sobre tus notas/`~/Documentos` → Astro responde sobre *lo tuyo* ("que recuerde") | 🔜 |
+| **Orion** | **Dashboard:** evolucionar el hub de eww para centralizar tareas/calendario/estado | 🟡 base existe |
 
-Orden pragmático: **0→1→2** te da un asistente funcional atado por USB con comandos
-fijos. Recién ahí decidís si priorizás **voz propia (3-4)** o **lenguaje natural (5)**.
+**Track hardware (el robot físico) — paralelo, cuando compres las piezas:**
+
+| Fase | Qué | Estado |
+|---|---|---|
+| **H1** | Robot base: cara (OLED) + gestos (servos), firmware por USB | ⏳ sin comprar |
+| **H2** | Voz del robot (parlante I2S) + lip-sync | ⏳ |
+| **H3** | Cortar el cable de datos → **WiFi**; wake-word; micro en el robot | ⏳ |
+
+La lógica (A→B→C→D) **corre sin el robot**; el hardware es "otra pantalla/voz" para el mismo cerebro
+(mismo protocolo `FACE/ARMS/SPEAK`, §7). Orden pragmático: seguir el track software; el robot cuando
+haya presupuesto y ganas.
+
+**Próximo salto a elegir:** **Fase C (cerebro LLM)** — convierte a Astro de comandos fijos en agente —
+o **Fase D (memoria)** — le da RAG sobre tu contenido. C habilita el "entiende cualquier cosa"; D el "recuerda".
 
 ## 9. Costos
 

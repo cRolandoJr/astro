@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -54,5 +55,28 @@ func TestAbriAppValidaFunciona(t *testing.T) {
 	a, err := testInterpreter().Interpret("abrí firefox")
 	if err != nil || a == nil {
 		t.Fatalf("esperaba acción válida, fue a=%v err=%v", a, err)
+	}
+}
+
+// TestAbriConPuntuacion: whisper agrega punto final ("Abrí firefox.") y eso no debe
+// filtrarse al nombre de app que llega a hyprctl (must-fix del review).
+func TestAbriConPuntuacion(t *testing.T) {
+	in := testInterpreter()
+	a, err := in.Interpret("Abrí firefox.")
+	if err != nil || a == nil {
+		t.Fatalf("esperaba acción válida, fue a=%v err=%v", a, err)
+	}
+	fake := &fakeRunner{}
+	if _, err := a.Run(fake); err != nil {
+		t.Fatalf("no debería fallar: %v", err)
+	}
+	want := []string{"hyprctl", "dispatch", "exec", "firefox"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v (sin el punto), fue %v", want, got)
+	}
+
+	pausar, err := testInterpreter().Interpret("pausá.")
+	if err != nil || pausar == nil || pausar.Name != "pausar" {
+		t.Fatalf("esperaba acción 'pausar', fue a=%v err=%v", pausar, err)
 	}
 }
