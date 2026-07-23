@@ -21,5 +21,5 @@ export ASTRO_WHISPER_MODEL="$HOME/modelos/ggml-small.bin"
 export ASTRO_PIPER_VOICE="$HOME/modelos/es_MX-ald-medium.onnx"
 export ASTRO_VOICE_FX="pitch 550 tempo 1.15 highpass 350 lowpass 3000 tremolo 6 25"
 
-exec nix shell nixpkgs#whisper-cpp nixpkgs#piper-tts nixpkgs#alsa-utils nixpkgs#sox nixpkgs#go \
+exec nix shell nixpkgs#whisper-cpp nixpkgs#piper-tts nixpkgs#alsa-utils nixpkgs#sox nixpkgs#grim nixpkgs#go \
   --command go run .
