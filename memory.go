@@ -60,11 +60,6 @@ func NewFileMemory(path string, embed embedFunc) (*FileMemory, error) {
 		if os.IsNotExist(err) {
 			return m, nil
 		}
-		// El "directorio" padre puede ser en realidad un archivo (ENOTDIR, no ENOENT):
-		// también cuenta como "no hay memoria todavía", no como error fatal de lectura.
-		if info, statErr := os.Stat(filepath.Dir(path)); statErr == nil && !info.IsDir() {
-			return m, nil
-		}
 		return nil, fmt.Errorf("no pude leer la memoria: %w", err)
 	}
 	if err := json.Unmarshal(raw, &m.facts); err != nil {

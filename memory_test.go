@@ -144,7 +144,9 @@ func TestFileMemoryPersistFallaRevierte(t *testing.T) {
 	}
 	path := filepath.Join(archivo, "mem.json") // el "dir" padre es en realidad un archivo
 	fe := &fakeEmbed{table: map[string][]float32{"hecho": {1, 0, 0}}}
-	m, _ := NewFileMemory(path, fe.fn)
+	// Construimos el struct directo (white-box, mismo paquete): así el path malo no rompe la
+	// carga y el fallo ocurre donde queremos probarlo, en persist()→MkdirAll.
+	m := &FileMemory{path: path, embed: fe.fn}
 	if err := m.Remember("hecho"); err == nil {
 		t.Fatal("persist debía fallar (el dir padre es un archivo)")
 	}
