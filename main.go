@@ -35,6 +35,19 @@ func main() {
 			os.Getenv("ASTRO_WHISPER_MODEL"), secs)
 	}
 
+	// Chirps tipo Wall-E (sox synth). Se apagan con ASTRO_CHIRPS=0; cada sonido se puede
+	// tunear por env (ASTRO_CHIRP_WAKE / _CONFUSED / _OK) sin recompilar.
+	chirpSpecs := defaultChirpSpecs()
+	for kind := range chirpSpecs {
+		if v := os.Getenv("ASTRO_CHIRP_" + strings.ToUpper(kind)); v != "" {
+			chirpSpecs[kind] = v
+		}
+	}
+	chirps := Chirps{
+		Runner: runner, Enabled: os.Getenv("ASTRO_CHIRPS") != "0",
+		WavPath: "/tmp/astro-chirp.wav", Specs: chirpSpecs,
+	}
+
 	// Astro abre su propia cara y la cierra al salir: con Ctrl+D (defer) y también si
 	// matan el proceso con Ctrl+C / kill (handler de señal), así no queda colgada.
 	if err := face.Open(); err != nil {
@@ -51,6 +64,7 @@ func main() {
 
 	_ = face.Show(Neutral)
 	fmt.Println("Astro está despierto.")
+	chirps.Play("wake")
 
 	for {
 		text, err := input.Listen()
@@ -63,12 +77,14 @@ func main() {
 			break
 		}
 		if text == "" {
+			chirps.Play("confused")
 			respond(face, voice, Pensativo, "No te escuché, repetí.")
 			continue
 		}
 
 		action, err := interpreter.Interpret(text)
 		if errors.Is(err, ErrNoEntiendo) {
+			chirps.Play("confused")
 			respond(face, voice, Pensativo, "No te entendí.")
 			continue
 		}
