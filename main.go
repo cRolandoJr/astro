@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,9 +16,11 @@ func main() {
 	var interpreter Interpreter = NewRuleInterpreter(buildActions(time.Now))
 
 	// Salida de voz (si no hay piper configurado, degradamos a solo-texto).
+	// ASTRO_VOICE_FX (opcional) = cadena de efectos sox para el timbre "robot".
 	voice := PiperVoice{
 		Runner: runner, PiperBin: envOr("ASTRO_PIPER_BIN", "piper"),
 		Voice: os.Getenv("ASTRO_PIPER_VOICE"), WavPath: "/tmp/astro-out.wav",
+		FxArgs: strings.Fields(os.Getenv("ASTRO_VOICE_FX")), FxPath: "/tmp/astro-fx.wav",
 	}
 
 	// Entrada: voz por default, stdin si ASTRO_INPUT=stdin (para debug).
