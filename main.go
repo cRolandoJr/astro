@@ -24,9 +24,12 @@ func main() {
 		llmKey := os.Getenv("ASTRO_LLM_KEY")
 		embed := httpEmbed(llmURL, llmKey, envOr("ASTRO_EMBED_MODEL", "text-embedding-004"))
 		topK, _ := strconv.Atoi(os.Getenv("ASTRO_MEM_TOPK"))
+		idleMin, _ := strconv.Atoi(os.Getenv("ASTRO_HISTORY_IDLE_MIN"))
+		historyTurns, _ := strconv.Atoi(os.Getenv("ASTRO_HISTORY_TURNS"))
 		interpreter = NewLLMInterpreter(LLMConfig{
 			Chat:    httpChat(llmURL, llmKey, envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
 			Actions: acts, Fallback: rules, Mem: buildMemory(embed), TopK: topK, Now: time.Now,
+			HistoryTurns: historyTurns, IdleWindow: time.Duration(idleMin) * time.Minute,
 		})
 	}
 
@@ -43,9 +46,12 @@ func main() {
 	if os.Getenv("ASTRO_INPUT") == "stdin" {
 		input = NewStdinInput()
 	} else {
-		secs, _ := strconv.Atoi(os.Getenv("ASTRO_REC_SECONDS"))
-		input = NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cli"),
+		secs, _ := strconv.Atoi(os.Getenv("ASTRO_REC_SECONDS")) // ahora = tope duro
+		vi := NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cli"),
 			os.Getenv("ASTRO_WHISPER_MODEL"), secs)
+		vi.SilencePct = os.Getenv("ASTRO_REC_SILENCE_PCT") // vacío → default en capture()
+		vi.TrailSec = os.Getenv("ASTRO_REC_TRAIL_SEC")
+		input = vi
 	}
 
 	// Chirps tipo Wall-E (sox synth). Se apagan con ASTRO_CHIRPS=0; cada sonido se puede
