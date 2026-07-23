@@ -47,6 +47,7 @@ func main() {
 	// Entrada: voz por default, stdin si ASTRO_INPUT=stdin (para debug), wake-word si ASTRO_INPUT=wake.
 	var input InputSource
 	var wake *WakeWordInput
+	var hotkey *HotkeyInput
 	switch os.Getenv("ASTRO_INPUT") {
 	case "stdin":
 		input = NewStdinInput()
@@ -59,6 +60,15 @@ func main() {
 		wake = w
 		defer wake.Close()
 		input = wake
+	case "hotkey":
+		h, err := NewHotkeyInput(envOr("ASTRO_TRIGGER_FIFO", "/tmp/astro-trigger.fifo"), newVoice(runner))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "modo hotkey:", err)
+			return
+		}
+		hotkey = h
+		defer hotkey.Close()
+		input = hotkey
 	default:
 		input = newVoice(runner)
 	}
@@ -89,6 +99,9 @@ func main() {
 		_ = face.Close()
 		if wake != nil {
 			_ = wake.Close()
+		}
+		if hotkey != nil {
+			_ = hotkey.Close()
 		}
 		os.Exit(0)
 	}()
