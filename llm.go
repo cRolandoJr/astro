@@ -65,6 +65,12 @@ func NewLLMInterpreter(cfg LLMConfig) *LLMInterpreter {
 }
 
 func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
+	now := li.now()
+	// Reset por inactividad: si pasó demasiado desde la última frase, es charla nueva.
+	if !li.lastTurn.IsZero() && now.Sub(li.lastTurn) > li.idleWindow {
+		li.history = nil
+	}
+	li.lastTurn = now
 	var facts []string
 	if li.mem != nil {
 		f, err := li.mem.Recall(text, li.topK)
@@ -92,21 +98,25 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	}
 	// Charla pura: sin acción (o "none") pero con say → solo hablar.
 	if (choice.Action == "" || choice.Action == "none") && choice.Say != "" {
+		li.remember(text, choice.Say)
 		return sayAction(choice.Say), nil
 	}
 	if choice.Action == "recordar" && li.mem != nil && choice.Arg != "" {
+		li.remember(text, choice.Say)
 		return wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), nil
 	}
 	if choice.Action == "open" {
 		if !isSafeAppName(choice.Arg) {
-			return li.fallback.Interpret(text) // arg peligroso → no por acá
+			return li.fallback.Interpret(text) // rechazo de seguridad → NO se registra
 		}
+		li.remember(text, choice.Say)
 		return wrap(openAppAction(choice.Arg), choice.Say), nil
 	}
 	if a, ok := li.actions[choice.Action]; ok {
+		li.remember(text, choice.Say)
 		return wrap(a, choice.Say), nil
 	}
-	return li.fallback.Interpret(text) // ni acción ni say → reglas
+	return li.fallback.Interpret(text) // acción desconocida → NO se registra
 }
 
 // systemPrompt arma el prompt: instrucciones + hechos recuperados (si hay) + menú (orden estable).
@@ -226,4 +236,12 @@ func memoryWriteAction(mem MemoryStore, text string) *Action {
 			}
 			return "", nil
 		}}
+}
+
+// remember agrega el turno al historial efímero y lo recorta a la ventana de N.
+func (li *LLMInterpreter) remember(user, assistant string) {
+	li.history = append(li.history, Exchange{User: user, Assistant: assistant})
+	if len(li.history) > li.historyTurns {
+		li.history = li.history[len(li.history)-li.historyTurns:]
+	}
 }
