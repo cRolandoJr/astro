@@ -15,7 +15,15 @@ import (
 func main() {
 	runner := ExecRunner{}
 	face := EwwFace{Runner: runner, ConfigDir: os.Getenv("ASTRO_EWW_CONFIG")}
-	var interpreter Interpreter = NewRuleInterpreter(buildActions(time.Now))
+	acts := buildActions(time.Now)
+	rules := NewRuleInterpreter(acts)
+	var interpreter Interpreter = rules
+	if os.Getenv("ASTRO_BRAIN") != "rules" { // default: cerebro LLM (con fallback a reglas)
+		interpreter = NewLLMInterpreter(
+			httpChat(os.Getenv("ASTRO_LLM_URL"), os.Getenv("ASTRO_LLM_KEY"),
+				envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
+			acts, rules)
+	}
 
 	// Salida de voz (si no hay piper configurado, degradamos a solo-texto).
 	// ASTRO_VOICE_FX (opcional) = cadena de efectos sox para el timbre "robot".
@@ -83,7 +91,7 @@ func main() {
 		}
 
 		action, err := interpreter.Interpret(text)
-		if errors.Is(err, ErrNoEntiendo) {
+		if err != nil { // ErrNoEntiendo o cualquier error del cerebro: reacciona y sigue, sin crash
 			chirps.Play("confused")
 			respond(face, voice, Pensativo, "No te entendí.")
 			continue

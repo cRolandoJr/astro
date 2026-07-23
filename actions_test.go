@@ -49,3 +49,11 @@ func TestAbrirUsaHyprctl(t *testing.T) {
 		t.Fatalf("esperaba %v, fue %v", want, got)
 	}
 }
+
+func TestAccionesTienenDescripcion(t *testing.T) {
+	for name, a := range buildActions(time.Now) {
+		if a.Desc == "" {
+			t.Errorf("acción %q sin Desc (la necesita el menú del LLM)", name)
+		}
+	}
+}
