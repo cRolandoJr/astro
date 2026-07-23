@@ -1,0 +1,9 @@
+(defvar astro_face "neutral")
+(defwidget face []
+  (box :class "astro"
+    (image :path "${EWW_CONFIG_DIR}/faces/${astro_face}.png" :image-width 256 :image-height 128)))
+(defwindow astro
+  :monitor 0
+  :geometry (geometry :x "20px" :y "20px" :width "280px" :height "160px" :anchor "top right")
+  :stacking "fg"
+  (face))

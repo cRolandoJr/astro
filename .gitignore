@@ -11,3 +11,6 @@ tutorial-original.zip
 .DS_Store
 *.swp
 *~
+
+# binario compilado del daemon (nombre = módulo)
+/astro
