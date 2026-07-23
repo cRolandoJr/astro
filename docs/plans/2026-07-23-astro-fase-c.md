@@ -187,6 +187,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 )
@@ -210,14 +211,18 @@ func NewLLMInterpreter(chat chatFunc, actions map[string]*Action, fallback Inter
 func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	reply, err := li.chat(li.systemPrompt(), text)
 	if err != nil {
-		return li.fallback.Interpret(text) // sin red / sin key → reglas
+		// Logueamos: un fallback silencioso daría "verde falso" (las reglas rescatan
+		// comandos con keyword y no te enterarías de que el LLM está muerto).
+		fmt.Fprintln(os.Stderr, "(cerebro LLM falló, uso reglas:", err, ")")
+		return li.fallback.Interpret(text)
 	}
 	var choice struct {
 		Action string `json:"action"`
 		Arg    string `json:"arg"`
 	}
-	if err := json.Unmarshal([]byte(extractJSON(reply)), &choice); err != nil {
-		return li.fallback.Interpret(text) // JSON inválido → reglas
+	if jerr := json.Unmarshal([]byte(extractJSON(reply)), &choice); jerr != nil {
+		fmt.Fprintln(os.Stderr, "(respuesta LLM no-JSON, uso reglas:", reply, ")")
+		return li.fallback.Interpret(text)
 	}
 	if choice.Action == "open" {
 		if !isSafeAppName(choice.Arg) {
@@ -384,10 +389,13 @@ Expected: saludo, "No te entendí.", "Chau" (las reglas siguen funcionando).
 export ASTRO_LLM_URL=https://generativelanguage.googleapis.com/v1beta/openai
 export ASTRO_LLM_KEY=AIza...
 export ASTRO_LLM_MODEL=gemini-2.5-flash
-printf 'che poné pausa\nsubime un toque el volumen\nabrime el firefox\n' | ASTRO_INPUT=stdin \
-  nix shell nixpkgs#go --command go run . 2>/dev/null
+# Frases que las REGLAS no pueden resolver (sin keyword) → prueban que el LLM actúa de verdad:
+printf 'dale play a la música\nhacé menos ruido\nabrime el firefox\n' | ASTRO_INPUT=stdin \
+  nix shell nixpkgs#go --command go run .
 ```
-Expected: interpreta lenguaje natural → pausa, sube volumen, abre firefox. (Después, con voz: el flujo completo.)
+Expected: interpreta natural → pausar, bajar/mute, abrir firefox. **Dejá stderr visible (sin `2>/dev/null`):**
+si ves `(cerebro LLM falló…)` o "No te entendí" en todas, el LLM NO está funcionando (key/modelo/red) —
+no te confíes de un verde falso.
 
 - [ ] **Step 6: Commit**
 
