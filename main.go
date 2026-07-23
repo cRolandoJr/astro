@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,10 +27,12 @@ func main() {
 		topK, _ := strconv.Atoi(os.Getenv("ASTRO_MEM_TOPK"))
 		idleMin, _ := strconv.Atoi(os.Getenv("ASTRO_HISTORY_IDLE_MIN"))
 		historyTurns, _ := strconv.Atoi(os.Getenv("ASTRO_HISTORY_TURNS"))
+		vision := httpVision(llmURL, llmKey, envOr("ASTRO_VISION_MODEL", envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")))
 		interpreter = NewLLMInterpreter(LLMConfig{
 			Chat:    httpChat(llmURL, llmKey, envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
 			Actions: acts, Fallback: rules, Mem: buildMemory(embed), TopK: topK, Now: time.Now,
 			HistoryTurns: historyTurns, IdleWindow: time.Duration(idleMin) * time.Minute,
+			Vision: vision, Monitors: buildMonitorsPrompt(runner),
 		})
 	}
 
@@ -160,4 +163,31 @@ func buildMemory(embed embedFunc) MemoryStore {
 		return nil
 	}
 	return mem
+}
+
+// buildMonitorsPrompt lee los monitores de Hyprland para que el LLM resuelva "el de la derecha" →
+// nombre de salida. Si falla (no Hyprland / no hyprctl), devuelve "" (mirar captura toda la pantalla).
+func buildMonitorsPrompt(r Runner) string {
+	out, err := r.Run("hyprctl", "monitors", "-j")
+	if err != nil {
+		return ""
+	}
+	var mons []struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		X           int    `json:"x"`
+		Focused     bool   `json:"focused"`
+	}
+	if err := json.Unmarshal([]byte(out), &mons); err != nil {
+		return ""
+	}
+	var parts []string
+	for _, m := range mons {
+		p := fmt.Sprintf("%s — %s, x=%d", m.Name, m.Description, m.X)
+		if m.Focused {
+			p += " (enfocado)"
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, "; ")
 }
