@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
 func main() {
 	runner := ExecRunner{}
-	var display Display = EwwFace{Runner: runner, ConfigDir: os.Getenv("ASTRO_EWW_CONFIG")}
+	face := EwwFace{Runner: runner, ConfigDir: os.Getenv("ASTRO_EWW_CONFIG")}
 	var interpreter Interpreter = NewRuleInterpreter(buildActions(time.Now))
 
 	// Salida de voz (si no hay piper configurado, degradamos a solo-texto).
@@ -33,7 +35,21 @@ func main() {
 			os.Getenv("ASTRO_WHISPER_MODEL"), secs)
 	}
 
-	_ = display.Show(Neutral)
+	// Astro abre su propia cara y la cierra al salir: con Ctrl+D (defer) y también si
+	// matan el proceso con Ctrl+C / kill (handler de señal), así no queda colgada.
+	if err := face.Open(); err != nil {
+		fmt.Fprintln(os.Stderr, "(no pude abrir la cara:", err, ")")
+	}
+	defer face.Close()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		_ = face.Close()
+		os.Exit(0)
+	}()
+
+	_ = face.Show(Neutral)
 	fmt.Println("Astro está despierto.")
 
 	for {
@@ -47,23 +63,23 @@ func main() {
 			break
 		}
 		if text == "" {
-			respond(display, voice, Pensativo, "No te escuché, repetí.")
+			respond(face, voice, Pensativo, "No te escuché, repetí.")
 			continue
 		}
 
 		action, err := interpreter.Interpret(text)
 		if errors.Is(err, ErrNoEntiendo) {
-			respond(display, voice, Pensativo, "No te entendí.")
+			respond(face, voice, Pensativo, "No te entendí.")
 			continue
 		}
 
 		reply, err := action.Run(runner)
 		if err != nil {
-			_ = display.Show(Neutral)
+			_ = face.Show(Neutral)
 			fmt.Println("Ups:", err) // error de ejecución: dev-facing, solo pantalla
 			continue
 		}
-		respond(display, voice, action.Face, reply)
+		respond(face, voice, action.Face, reply)
 	}
 	fmt.Println("\nChau 👋")
 }

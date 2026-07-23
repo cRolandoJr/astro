@@ -17,12 +17,22 @@ type EwwFace struct {
 }
 
 func (e EwwFace) Show(expr Expression) error {
-	args := []string{"update", fmt.Sprintf("astro_face=%s", expr)}
+	return e.eww("update", fmt.Sprintf("astro_face=%s", expr))
+}
+
+// Open/Close manejan la ventana del widget. Astro la abre al arrancar y la cierra al
+// salir, así la cara no queda colgada (eww corre en su propio daemon, aparte del proceso).
+func (e EwwFace) Open() error  { return e.eww("open", "astro") }
+func (e EwwFace) Close() error { return e.eww("close", "astro") }
+
+// eww corre un subcomando de eww, anteponiendo --config <dir> si está seteado.
+// Factoriza el --config que comparten Show/Open/Close.
+func (e EwwFace) eww(args ...string) error {
 	if e.ConfigDir != "" {
 		args = append([]string{"--config", e.ConfigDir}, args...)
 	}
 	if _, err := e.Runner.Run("eww", args...); err != nil {
-		return fmt.Errorf("no pude actualizar la cara: %w", err)
+		return fmt.Errorf("eww falló: %w", err)
 	}
 	return nil
 }
