@@ -240,6 +240,12 @@ func memoryWriteAction(mem MemoryStore, text string) *Action {
 
 // remember agrega el turno al historial efímero y lo recorta a la ventana de N.
 func (li *LLMInterpreter) remember(user, assistant string) {
+	// Sin respuesta hablada no registramos el turno: guardar assistant="" mandaría al LLM,
+	// el turno siguiente, un mensaje que Astro nunca dijo (la frase enlatada de la acción se
+	// habla pero no llega hasta acá) — y varios endpoints rechazan content vacío.
+	if assistant == "" {
+		return
+	}
 	li.history = append(li.history, Exchange{User: user, Assistant: assistant})
 	if len(li.history) > li.historyTurns {
 		li.history = li.history[len(li.history)-li.historyTurns:]

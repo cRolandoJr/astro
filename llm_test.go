@@ -255,3 +255,14 @@ func TestLLMNoRegistraTurnoRechazado(t *testing.T) {
 		t.Fatalf("un turno rechazado por seguridad no debe registrarse; historial=%v", li.history)
 	}
 }
+
+func TestLLMNoRegistraComandoSinSay(t *testing.T) {
+	// Comando sin say: Astro habla la frase enlatada, pero no hay respuesta que registrar →
+	// el historial no debe guardar un turno con asistente vacío.
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := newLLMClock(fakeChat(`{"action":"pausar"}`, nil), clock)
+	li.Interpret("pausá")
+	if len(li.history) != 0 {
+		t.Fatalf("un comando sin say no debe registrar turno vacío; historial=%v", li.history)
+	}
+}
