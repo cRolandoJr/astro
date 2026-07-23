@@ -5,6 +5,7 @@ package main
 // La interfaz se gana donde hay varias implementaciones (Display, Interpreter, Runner).
 type Action struct {
 	Name string
+	Desc string // qué hace, en una línea — para el menú que ve el LLM
 	Face Expression
 	Run  func(r Runner) (reply string, err error)
 }
