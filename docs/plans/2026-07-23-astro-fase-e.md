@@ -128,18 +128,22 @@ git commit -m "feat: memoria — tipos Fact/MemoryStore/embedFunc + cosine"
 
 - [ ] **Step 1: Tests que fallan (agregar a `memory_test.go`)**
 
-Agregá los imports `"os"`, `"path/filepath"` al bloque de imports del test, y:
+Agregá los imports `"fmt"`, `"os"`, `"path/filepath"`, `"reflect"` al bloque de imports del test (junto a `"testing"`), y:
 
 ```go
 // fakeEmbed: embedder determinista para tests; cuenta llamadas (para verificar que NO se
-// re-embebe al reabrir) y mapea textos conocidos a vectores.
+// re-embebe al reabrir), puede devolver error (para el camino de fallo) y mapea textos a vectores.
 type fakeEmbed struct {
 	calls int
+	err   error
 	table map[string][]float32
 }
 
 func (f *fakeEmbed) fn(text string) ([]float32, error) {
 	f.calls++
+	if f.err != nil {
+		return nil, f.err
+	}
 	if v, ok := f.table[text]; ok {
 		return v, nil
 	}
@@ -213,6 +217,62 @@ func TestFileMemoryArchivoCorrupto(t *testing.T) {
 	}
 	if len(m.facts) != 0 {
 		t.Fatalf("corrupto → memoria vacía, fue %v", m.facts)
+	}
+}
+
+// #1 (mentor): el spec §6 promete que un embed caído devuelve error y NO muta facts.
+func TestFileMemoryEmbedFallaNoMuta(t *testing.T) {
+	fe := &fakeEmbed{err: fmt.Errorf("embed caído")}
+	m, _ := NewFileMemory(filepath.Join(t.TempDir(), "m.json"), fe.fn)
+	if err := m.Remember("x"); err == nil {
+		t.Fatal("embed caído debe devolver error")
+	}
+	if len(m.facts) != 0 {
+		t.Fatalf("no debe mutar facts si falló el embed, fue %v", m.facts)
+	}
+}
+
+// #2 (mentor): si persist falla, el hecho ya appendeado se revierte. Forzamos el fallo con un
+// path cuyo directorio padre es un ARCHIVO → MkdirAll (dentro de persist) falla.
+func TestFileMemoryPersistFallaRevierte(t *testing.T) {
+	dir := t.TempDir()
+	archivo := filepath.Join(dir, "soy-archivo")
+	if err := os.WriteFile(archivo, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(archivo, "mem.json") // el "dir" padre es en realidad un archivo
+	fe := &fakeEmbed{table: map[string][]float32{"hecho": {1, 0, 0}}}
+	m, _ := NewFileMemory(path, fe.fn)
+	if err := m.Remember("hecho"); err == nil {
+		t.Fatal("persist debía fallar (el dir padre es un archivo)")
+	}
+	if len(m.facts) != 0 {
+		t.Fatalf("si persist falla, el hecho se revierte; facts=%v", m.facts)
+	}
+}
+
+// #4 (mentor): k>len se recorta (sin panic) y el resultado viene ordenado por coseno desc.
+func TestFileMemoryRecallOrdenYClamp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mem.json")
+	fe := &fakeEmbed{table: map[string][]float32{
+		"cerca": {1, 0, 0},
+		"medio": {0.5, 0.5, 0},
+		"lejos": {0, 1, 0},
+		"query": {0.9, 0.1, 0}, // cerca > medio > lejos
+	}}
+	m, _ := NewFileMemory(path, fe.fn)
+	for _, txt := range []string{"cerca", "medio", "lejos"} {
+		if err := m.Remember(txt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := m.Recall("query", 5) // k=5 > 3 hechos → clamp a 3
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"cerca", "medio", "lejos"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v (clamp k>len + orden por coseno), fue %v", want, got)
 	}
 }
 ```
@@ -531,6 +591,15 @@ func TestLLMRecallErrorNoRompeElTurno(t *testing.T) {
 		t.Fatalf("un fallo de Recall no debe romper el turno; a=%v err=%v", a, err)
 	}
 }
+
+// #3 (mentor): recordar con arg vacío no debe guardar un hecho vacío (no matchea → fallback).
+func TestLLMRecordarArgVacioNoGuarda(t *testing.T) {
+	mem := &fakeMemory{}
+	_, _ = newLLMWithMem(fakeChat(`{"action":"recordar","arg":"","say":"ok"}`, nil), mem).Interpret("acordate")
+	if len(mem.remembered) != 0 {
+		t.Fatalf("no debe guardar un hecho vacío; guardó %v", mem.remembered)
+	}
+}
 ```
 
 - [ ] **Step 2: Correr — falla**
@@ -586,7 +655,7 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	if (choice.Action == "" || choice.Action == "none") && choice.Say != "" {
 		return sayAction(choice.Say), nil
 	}
-	if choice.Action == "recordar" && li.mem != nil {
+	if choice.Action == "recordar" && li.mem != nil && choice.Arg != "" {
 		return wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), nil
 	}
 	if choice.Action == "open" {
