@@ -64,10 +64,11 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 // systemPrompt arma el menú de acciones para el LLM (orden estable).
 func (li *LLMInterpreter) systemPrompt() string {
 	var b strings.Builder
-	b.WriteString("Sos Astro, un asistente de escritorio. El usuario te habla en español. ")
-	b.WriteString("Elegí UNA acción de la lista según lo que pide. Respondé SOLO un JSON: ")
-	b.WriteString(`{"action":"<nombre>","arg":"<opcional>"}`)
-	b.WriteString(". Si ninguna aplica, usá \"none\". Acciones:\n")
+	b.WriteString("Sos Astro, un asistente de escritorio con voz. El usuario te habla en español. ")
+	b.WriteString("Respondé SOLO un JSON: {\"action\":\"<opcional>\",\"arg\":\"<opcional>\",\"say\":\"<respuesta hablada>\"}. ")
+	b.WriteString("Si es un COMANDO, elegí un `action` del menú y un `say` corto de confirmación. ")
+	b.WriteString("Si es CHARLA o una pregunta, usá action:\"none\" y contestá en `say`. ")
+	b.WriteString("El `say` se lee en voz alta: que sea BREVE (1-2 frases), natural y en español. Menú:\n")
 	names := make([]string, 0, len(li.actions))
 	for n := range li.actions {
 		names = append(names, n)
