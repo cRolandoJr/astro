@@ -60,3 +60,50 @@ func TestLLMFallbackSiJSONInvalido(t *testing.T) {
 		t.Fatalf("esperaba fallback → saludar; a=%v err=%v", a, err)
 	}
 }
+
+func TestLLMActionConSayHablaElSay(t *testing.T) {
+	fake := &fakeRunner{}
+	a, err := newLLM(fakeChat(`{"action":"pausar","say":"Dale, te pausé."}`, nil)).Interpret("poné pausa")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	reply, err := a.Run(fake)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if reply != "Dale, te pausé." {
+		t.Fatalf("esperaba el say del LLM, fue %q", reply)
+	}
+	if got := fake.lastCall(); len(got) < 1 || got[0] != "playerctl" {
+		t.Fatalf("esperaba que corriera playerctl, fue %v", got)
+	}
+}
+
+func TestLLMCharlaSoloHabla(t *testing.T) {
+	fake := &fakeRunner{}
+	a, err := newLLM(fakeChat(`{"action":"none","say":"Estoy bien, ¿y vos?"}`, nil)).Interpret("cómo estás")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	reply, err := a.Run(fake)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if reply != "Estoy bien, ¿y vos?" {
+		t.Fatalf("esperaba la charla, fue %q", reply)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("la charla no debe ejecutar comandos, hubo %v", fake.calls)
+	}
+}
+
+func TestLLMSayPuroSinAction(t *testing.T) {
+	a, err := newLLM(fakeChat(`{"say":"un chiste corto"}`, nil)).Interpret("contame un chiste")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	reply, _ := a.Run(&fakeRunner{})
+	if reply != "un chiste corto" {
+		t.Fatalf("fue %q", reply)
+	}
+}
