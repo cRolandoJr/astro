@@ -11,3 +11,13 @@ func TestExecRunnerRunsCommand(t *testing.T) {
 		t.Fatalf("esperaba %q, obtuve %q", "hola", out)
 	}
 }
+
+func TestExecRunnerRunWithInputPipesStdin(t *testing.T) {
+	out, err := ExecRunner{}.RunWithInput("hola\n", "cat")
+	if err != nil {
+		t.Fatalf("no debería fallar: %v", err)
+	}
+	if out != "hola" {
+		t.Fatalf("esperaba %q, obtuve %q", "hola", out)
+	}
+}
