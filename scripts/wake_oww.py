@@ -45,7 +45,10 @@ def main():
         target = model_spec or "hey_jarvis"
     log(f"escuchando (modelo={model_spec or 'hey_jarvis'}, umbral={threshold})…")
 
+    debug = os.environ.get("ASTRO_OWW_DEBUG", "") != ""
     last_fire = 0.0
+    win_max = 0.0
+    win_n = 0
     stdin = sys.stdin.buffer
     while True:
         chunk = stdin.read(FRAME_BYTES)
@@ -55,6 +58,12 @@ def main():
         frame = np.frombuffer(chunk, dtype=np.int16)
         scores = model.predict(frame)  # {nombre_modelo: score}
         score = scores.get(target, 0.0) if target else (max(scores.values()) if scores else 0.0)
+        if debug:  # heartbeat ~1s: muestra el pico de score → ¿llega audio? ¿cuánto puntúa?
+            win_max = max(win_max, score)
+            win_n += 1
+            if win_n >= 12:
+                log(f"score_max≈{win_max:.2f} (rms={int(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))})")
+                win_max, win_n = 0.0, 0
         if score >= threshold and (time.time() - last_fire) > COOLDOWN_SEC:
             last_fire = time.time()
             print("DETECTED", flush=True)  # STDOUT: el evento que lee Astro
