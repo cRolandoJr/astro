@@ -2,9 +2,22 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"reflect"
 	"testing"
 )
+
+func TestIsTimeout(t *testing.T) {
+	if !isTimeout(exec.Command("sh", "-c", "exit 124").Run()) {
+		t.Error("exit 124 (tope de timeout) debe reconocerse como timeout, no como falla")
+	}
+	if isTimeout(exec.Command("sh", "-c", "exit 1").Run()) {
+		t.Error("exit 1 no debe contarse como timeout")
+	}
+	if isTimeout(nil) {
+		t.Error("nil no es timeout")
+	}
+}
 
 func TestIsRealUtterance(t *testing.T) {
 	real := []string{"qué hora es", "poné pausa", "sí", "no", "abrí firefox", "reproducí música"}

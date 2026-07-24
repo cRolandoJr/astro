@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -89,15 +91,22 @@ func (v *VoiceInput) captureMax(maxSecs int) (string, error) {
 	fmt.Println("🎙️  hablá… (corta sola al callarte)")
 	timing := os.Getenv("ASTRO_TIMING") == "1"
 	// rec (sox) graba hasta el silencio de cola; 'timeout' es el tope duro si el umbral nunca
-	// detecta silencio (ruido constante) → no graba infinito. rec sale 0 al cortar por silencio.
+	// detecta silencio. rec sale 0 al cortar por silencio.
 	tRec := time.Now()
-	if _, err := v.Runner.Run("timeout", strconv.Itoa(maxSecs),
+	_, recErr := v.Runner.Run("timeout", strconv.Itoa(maxSecs),
 		"rec", "-q", "-c", "1", "-r", "16000", v.WavPath,
-		"silence", "1", "0.1", thresh, "1", trail, thresh); err != nil {
-		return "", fmt.Errorf("no pude grabar (¿sox/rec + timeout/coreutils + PipeWire?): %w", err)
-	}
+		"silence", "1", "0.1", thresh, "1", trail, thresh)
 	if timing {
 		fmt.Fprintf(os.Stderr, "⏱ rec(grabación+VAD): %v\n", time.Since(tRec).Round(time.Millisecond))
+	}
+	if recErr != nil {
+		// 'timeout' devuelve 124 al cortar por el tope: en la ventana de conversación = no hablaste,
+		// o ruido constante que nunca dispara el silencio. NO es fatal → captura vacía (el llamador
+		// decide dormir / "no te escuché"). Cualquier otro error de rec sí es real.
+		if isTimeout(recErr) {
+			return "", nil
+		}
+		return "", fmt.Errorf("no pude grabar (¿sox/rec + timeout/coreutils + PipeWire?): %w", recErr)
 	}
 	// whisper escribe la transcripción a <of>.txt (-nt: sin timestamps).
 	ofPrefix := strings.TrimSuffix(v.WavPath, ".wav")
@@ -120,6 +129,13 @@ func (v *VoiceInput) captureMax(maxSecs int) (string, error) {
 	text := cleanTranscript(string(raw))
 	fmt.Printf("🗣️  entendí: %q\n", text) // feedback: qué transcribió Whisper (debug + UX)
 	return text, nil
+}
+
+// isTimeout indica si el error viene de `timeout` cortando por el tope (exit 124) — esperado (fin de
+// ventana sin voz / ruido constante), NO una falla real de grabación.
+func isTimeout(err error) bool {
+	var ee *exec.ExitError
+	return errors.As(err, &ee) && ee.ExitCode() == 124
 }
 
 // isRealUtterance decide si una transcripción es habla real y no vacío/ruido/alucinación. Whisper
