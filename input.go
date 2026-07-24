@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // InputSource entrega el próximo comando como texto. Interfaz porque hay dos impls
@@ -86,18 +87,27 @@ func (v *VoiceInput) captureMax(maxSecs int) (string, error) {
 		_ = v.Face.Show(Curioso) // cara de "te escucho" mientras grabás
 	}
 	fmt.Println("🎙️  hablá… (corta sola al callarte)")
+	timing := os.Getenv("ASTRO_TIMING") == "1"
 	// rec (sox) graba hasta el silencio de cola; 'timeout' es el tope duro si el umbral nunca
 	// detecta silencio (ruido constante) → no graba infinito. rec sale 0 al cortar por silencio.
+	tRec := time.Now()
 	if _, err := v.Runner.Run("timeout", strconv.Itoa(maxSecs),
 		"rec", "-q", "-c", "1", "-r", "16000", v.WavPath,
 		"silence", "1", "0.1", thresh, "1", trail, thresh); err != nil {
 		return "", fmt.Errorf("no pude grabar (¿sox/rec + timeout/coreutils + PipeWire?): %w", err)
 	}
+	if timing {
+		fmt.Fprintf(os.Stderr, "⏱ rec(grabación+VAD): %v\n", time.Since(tRec).Round(time.Millisecond))
+	}
 	// whisper escribe la transcripción a <of>.txt (-nt: sin timestamps).
 	ofPrefix := strings.TrimSuffix(v.WavPath, ".wav")
+	tW := time.Now()
 	if _, err := v.Runner.Run(v.WhisperBin, "-m", v.WhisperModel, "-f", v.WavPath,
 		"-l", "es", "-nt", "-otxt", "-of", ofPrefix); err != nil {
 		return "", fmt.Errorf("no pude transcribir (¿whisper/modelo?): %w", err)
+	}
+	if timing {
+		fmt.Fprintf(os.Stderr, "⏱ whisper: %v\n", time.Since(tW).Round(time.Millisecond))
 	}
 	readFile := v.ReadFile
 	if readFile == nil {

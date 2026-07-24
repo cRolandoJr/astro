@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
-	"time"
 )
 
 // WakeWordInput espera a que un sidecar (motor de wake-word) emita "DETECTED" por stdout y ahí
@@ -54,7 +53,7 @@ func (w *WakeWordInput) Listen() (string, error) {
 	// En modo conversación NO exigimos la palabra: escuchamos una ventana corta directo.
 	if w.conversing {
 		fmt.Println("💬 seguí hablando… (o callate y vuelvo a dormir)")
-		text, err := w.captureTimed(w.followUp)
+		text, err := w.voice.captureMax(w.followUp)
 		if err != nil {
 			return "", err
 		}
@@ -78,17 +77,7 @@ func (w *WakeWordInput) Listen() (string, error) {
 	if w.followUp > 0 {
 		w.conversing = true // arrancamos conversación: los próximos turnos no piden la palabra
 	}
-	return w.captureTimed(w.voice.MaxSeconds)
-}
-
-// captureTimed graba (tope maxSecs) y transcribe, logueando la latencia si ASTRO_TIMING=1.
-func (w *WakeWordInput) captureTimed(maxSecs int) (string, error) {
-	t := time.Now()
-	text, err := w.voice.captureMax(maxSecs)
-	if os.Getenv("ASTRO_TIMING") == "1" {
-		fmt.Fprintf(os.Stderr, "⏱ captura(rec+whisper): %v\n", time.Since(t).Round(time.Millisecond))
-	}
-	return text, err
+	return w.voice.captureMax(w.voice.MaxSeconds)
 }
 
 // Close mata el sidecar y lo cosecha. main lo llama con defer y en el handler de señal.
