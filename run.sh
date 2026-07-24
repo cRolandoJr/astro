@@ -30,5 +30,9 @@ export ASTRO_VOICE_FX="gain -3 pitch 600"
 # Activación por voz sin Enter: apretás SUPER+SHIFT+A (bind de Hyprland) y Astro escucha una vez.
 export ASTRO_INPUT=hotkey
 
+# Astro no tiene deps de C → compilar en Go puro (resolver netgo). Evita necesitar gcc, que no está
+# en el PATH mínimo del servicio systemd (interactivo andaba porque tu shell de login sí lo tiene).
+export CGO_ENABLED=0
+
 exec nix shell nixpkgs#whisper-cpp nixpkgs#piper-tts nixpkgs#alsa-utils nixpkgs#sox nixpkgs#grim nixpkgs#go \
   --command go run .
