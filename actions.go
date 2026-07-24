@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -146,6 +147,31 @@ func fechaES(t time.Time) string {
 	dias := []string{"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"}
 	meses := []string{"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"}
 	return fmt.Sprintf("%s %d de %s", dias[int(t.Weekday())], t.Day(), meses[int(t.Month())-1])
+}
+
+// ArgTool es una tool que necesita un argumento (el LLM lo pasa en `arg`). Build liga el arg y
+// devuelve la acción. Van en un mapa aparte porque el registro normal no lleva arg.
+type ArgTool struct {
+	Desc  string
+	Build func(arg string) *Action
+}
+
+// buildArgActions arma las tools con arg (todas por Runner/argv → sin shell, sin inyección).
+func buildArgActions() map[string]*ArgTool {
+	return map[string]*ArgTool{
+		"volumen_a": {Desc: "poner el volumen en un valor 0-150 (arg = número)", Build: func(arg string) *Action {
+			return &Action{Name: "volumen_a", Face: Neutral, Run: func(r Runner) (string, error) {
+				n, err := strconv.Atoi(strings.TrimSpace(arg))
+				if err != nil || n < 0 || n > 150 {
+					return "", fmt.Errorf("volumen inválido: %q", arg)
+				}
+				if _, err := r.Run("wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", strconv.Itoa(n)+"%"); err != nil {
+					return "", fmt.Errorf("no pude cambiar el volumen: %w", err)
+				}
+				return "Volumen al " + strconv.Itoa(n) + " por ciento.", nil
+			}}
+		}},
+	}
 }
 
 // openAppAction arma una acción al vuelo que abre 'app'. Usa `hyprctl dispatch exec` porque

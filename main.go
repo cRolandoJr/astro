@@ -30,7 +30,7 @@ func main() {
 		vision := httpVision(llmURL, llmKey, envOr("ASTRO_VISION_MODEL", envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")))
 		interpreter = NewLLMInterpreter(LLMConfig{
 			Chat:    httpChat(llmURL, llmKey, envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
-			Actions: acts, Fallback: rules, Mem: buildMemory(embed), TopK: topK, Now: time.Now,
+			Actions: acts, ArgActions: buildArgActions(), Fallback: rules, Mem: buildMemory(embed), TopK: topK, Now: time.Now,
 			HistoryTurns: historyTurns, IdleWindow: time.Duration(idleMin) * time.Minute,
 			Vision: vision, Monitors: buildMonitorsPrompt(runner),
 		})
