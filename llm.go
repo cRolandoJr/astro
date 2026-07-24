@@ -209,6 +209,11 @@ func httpChat(baseURL, apiKey, model string) chatFunc {
 		if strings.Contains(baseURL, "deepseek") {
 			reqBody["thinking"] = map[string]string{"type": "disabled"}
 		}
+		// OpenRouter: varios modelos (incluido deepseek-v4-flash vía OR) vienen con "reasoning"
+		// prendido → suma latencia y tokens. Para un asistente de voz lo apagamos.
+		if strings.Contains(baseURL, "openrouter") {
+			reqBody["reasoning"] = map[string]any{"enabled": false}
+		}
 		body, _ := json.Marshal(reqBody)
 		url := strings.TrimRight(baseURL, "/") + "/chat/completions"
 		req, err := http.NewRequest("POST", url, bytes.NewReader(body))

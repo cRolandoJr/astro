@@ -10,11 +10,12 @@ if [[ ! -f ./secrets.env ]]; then
 fi
 source ./secrets.env   # define ASTRO_LLM_KEY
 
-# Cerebro (chat) en DeepSeek pago (OpenAI-compat) — sin límite diario como el free de Gemini.
-# NOTA: embeddings (recordar) y visión (mirar) reusan ASTRO_LLM_URL → con DeepSeek se degradan
-# (DeepSeek no tiene esos endpoints); se restauran separando proveedores (Gemini) más adelante.
-export ASTRO_LLM_URL=https://api.deepseek.com
-export ASTRO_LLM_MODEL=deepseek-v4-flash
+# Cerebro (chat) vía OpenRouter (OpenAI-compat): trae DeepSeek v4-flash y acepta tarjeta
+# internacional (el pago directo a DeepSeek/China no cursaba). Bonus: OpenRouter TAMBIÉN expone
+# /embeddings (gemini-embedding-001, 3072 dims) → `recordar` anda por la misma URL/key, sin
+# proveedor aparte. `mirar` (visión) reusa la misma URL; depende de que el modelo acepte imágenes.
+export ASTRO_LLM_URL=https://openrouter.ai/api/v1
+export ASTRO_LLM_MODEL=deepseek/deepseek-v4-flash
 export ASTRO_EMBED_MODEL=gemini-embedding-001
 
 # Cara (eww), STT (whisper)
