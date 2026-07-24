@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,7 @@ func buildActions(now func() time.Time) map[string]*Action {
 		Run: func(r Runner) (string, error) { return "¡Ya estoy despierto!", nil }})
 
 	addDesktopActions(add) // definidas en Task 4 (mismo archivo)
+	addInfoActions(add, now)
 	return actions
 }
 
@@ -53,6 +55,97 @@ func volume(delta, ok string) func(Runner) (string, error) {
 		}
 		return ok, nil
 	}
+}
+
+// addInfoActions registra tools de media/sistema/info (no destructivas).
+func addInfoActions(add func(*Action), now func() time.Time) {
+	add(&Action{Name: "anterior", Desc: "volver a la pista anterior", Face: Feliz, Run: playerctl("previous", "Anterior.")})
+
+	add(&Action{Name: "que_suena", Desc: "decir qué está sonando", Face: Curioso, Run: func(r Runner) (string, error) {
+		out, err := r.Run("playerctl", "metadata", "--format", "{{artist}} - {{title}}")
+		out = strings.TrimSpace(out)
+		if err != nil || out == "" || out == "-" {
+			return "No hay nada sonando.", nil
+		}
+		return "Está sonando: " + out + ".", nil
+	}})
+
+	add(&Action{Name: "silenciar_micro", Desc: "silenciar o activar el micrófono", Face: Neutral, Run: func(r Runner) (string, error) {
+		if _, err := r.Run("wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"); err != nil {
+			return "", fmt.Errorf("no pude tocar el micrófono: %w", err)
+		}
+		return "Micrófono cambiado.", nil
+	}})
+
+	add(&Action{Name: "bateria", Desc: "decir el porcentaje de batería", Face: Neutral, Run: func(r Runner) (string, error) {
+		devs, err := r.Run("upower", "-e")
+		if err != nil {
+			return "", fmt.Errorf("no pude leer la batería: %w", err)
+		}
+		dev := ""
+		for _, l := range strings.Split(devs, "\n") {
+			if strings.Contains(l, "battery") {
+				dev = strings.TrimSpace(l)
+				break
+			}
+		}
+		if dev == "" {
+			return "No encontré la batería.", nil
+		}
+		info, err := r.Run("upower", "-i", dev)
+		if err != nil {
+			return "", fmt.Errorf("no pude leer la batería: %w", err)
+		}
+		for _, l := range strings.Split(info, "\n") {
+			if strings.Contains(l, "percentage:") {
+				return "Batería al " + strings.TrimSpace(strings.SplitN(l, ":", 2)[1]) + ".", nil
+			}
+		}
+		return "No pude leer el porcentaje.", nil
+	}})
+
+	add(&Action{Name: "fecha", Desc: "decir el día y la fecha de hoy", Face: Neutral, Run: func(r Runner) (string, error) {
+		return "Hoy es " + fechaES(now()) + ".", nil
+	}})
+
+	add(&Action{Name: "clima", Desc: "decir el clima actual", Face: Curioso, Run: func(r Runner) (string, error) {
+		// timeouts: clima es la única tool de red; sin -m/--connect-timeout un curl estancado
+		// colgaría el único goroutine del daemon (no procesaría más voz).
+		out, err := r.Run("curl", "-s", "-m", "10", "--connect-timeout", "5", "wttr.in/?format=%C+%t")
+		out = strings.TrimSpace(out)
+		if err != nil || out == "" {
+			return "No pude ver el clima.", nil
+		}
+		return "El clima: " + out + ".", nil
+	}})
+
+	add(&Action{Name: "agenda", Desc: "decir el próximo evento de la agenda", Face: Curioso, Run: func(r Runner) (string, error) {
+		// --day-format "" suprime el encabezado de día de khal; tomamos la 1ª línea NO vacía.
+		out, err := r.Run("khal", "list", "now", "24h", "--day-format", "", "--format", "{start-time} {title}")
+		if err != nil {
+			return "No tenés nada en la agenda por ahora.", nil
+		}
+		for _, l := range strings.Split(out, "\n") {
+			if s := strings.TrimSpace(l); s != "" {
+				return "Próximo: " + s + ".", nil
+			}
+		}
+		return "No tenés nada en la agenda por ahora.", nil
+	}})
+
+	add(&Action{Name: "bloquear", Desc: "bloquear la pantalla", Face: Dormido, Run: func(r Runner) (string, error) {
+		if _, err := r.Run("hyprlock"); err != nil {
+			return "", fmt.Errorf("no pude bloquear: %w", err)
+		}
+		return "Bloqueando.", nil
+	}})
+}
+
+// fechaES formatea la fecha en español (time.Format no localiza).
+func fechaES(t time.Time) string {
+	dias := []string{"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"}
+	meses := []string{"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"}
+	return fmt.Sprintf("%s %d de %s", dias[int(t.Weekday())], t.Day(), meses[int(t.Month())-1])
 }
 
 // openAppAction arma una acción al vuelo que abre 'app'. Usa `hyprctl dispatch exec` porque
