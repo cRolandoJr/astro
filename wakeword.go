@@ -64,6 +64,10 @@ func (w *WakeWordInput) Listen() (string, error) {
 		fmt.Println("💤 (me dormí — decí \"Astro\" para volver)")
 		// no hablaste → caemos a esperar la palabra de nuevo
 	}
+	// Al dormir (esperar la palabra), la cara desaparece: idle = sin cara. El wake/captura la reabre.
+	if w.voice != nil && w.voice.Face != nil {
+		_ = w.voice.Face.Close()
+	}
 	fmt.Println("💤 esperando \"Astro\"…")
 	if !w.events.Scan() {
 		if err := w.events.Err(); err != nil {
