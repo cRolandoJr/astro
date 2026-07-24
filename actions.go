@@ -15,7 +15,7 @@ func buildActions(now func() time.Time) map[string]*Action {
 
 	add(&Action{Name: "saludar", Desc: "saludar o responder un saludo", Face: Feliz,
 		Run: func(r Runner) (string, error) { return "¡Hola! Soy Astro.", nil }})
-	add(&Action{Name: "hora", Desc: "decir la hora actual", Face: Neutral,
+	add(&Action{Name: "hora", Desc: "decir la hora actual", Face: Neutral, Speaks: true,
 		Run: func(r Runner) (string, error) { return "Son las " + now().Format("15:04") + ".", nil }})
 	add(&Action{Name: "dormir", Desc: "poner a Astro a dormir", Face: Dormido,
 		Run: func(r Runner) (string, error) { return "Me duermo… 💤", nil }})
@@ -63,7 +63,7 @@ func volume(delta, ok string) func(Runner) (string, error) {
 func addInfoActions(add func(*Action), now func() time.Time) {
 	add(&Action{Name: "anterior", Desc: "volver a la pista anterior", Face: Feliz, Run: playerctl("previous", "Anterior.")})
 
-	add(&Action{Name: "que_suena", Desc: "decir qué está sonando", Face: Curioso, Run: func(r Runner) (string, error) {
+	add(&Action{Name: "que_suena", Desc: "decir qué está sonando", Face: Curioso, Speaks: true, Run: func(r Runner) (string, error) {
 		out, err := r.Run("playerctl", "metadata", "--format", "{{artist}} - {{title}}")
 		out = strings.TrimSpace(out)
 		if err != nil || out == "" || out == "-" {
@@ -79,7 +79,7 @@ func addInfoActions(add func(*Action), now func() time.Time) {
 		return "Micrófono cambiado.", nil
 	}})
 
-	add(&Action{Name: "bateria", Desc: "decir el porcentaje de batería", Face: Neutral, Run: func(r Runner) (string, error) {
+	add(&Action{Name: "bateria", Desc: "decir el porcentaje de batería", Face: Neutral, Speaks: true, Run: func(r Runner) (string, error) {
 		devs, err := r.Run("upower", "-e")
 		if err != nil {
 			return "", fmt.Errorf("no pude leer la batería: %w", err)
@@ -106,11 +106,11 @@ func addInfoActions(add func(*Action), now func() time.Time) {
 		return "No pude leer el porcentaje.", nil
 	}})
 
-	add(&Action{Name: "fecha", Desc: "decir el día y la fecha de hoy", Face: Neutral, Run: func(r Runner) (string, error) {
+	add(&Action{Name: "fecha", Desc: "decir el día y la fecha de hoy", Face: Neutral, Speaks: true, Run: func(r Runner) (string, error) {
 		return "Hoy es " + spanishDate(now()) + ".", nil
 	}})
 
-	add(&Action{Name: "clima", Desc: "decir el clima actual", Face: Curioso, Run: func(r Runner) (string, error) {
+	add(&Action{Name: "clima", Desc: "decir el clima actual", Face: Curioso, Speaks: true, Run: func(r Runner) (string, error) {
 		// timeouts: clima es la única tool de red; sin -m/--connect-timeout un curl estancado
 		// colgaría el único goroutine del daemon (no procesaría más voz).
 		out, err := r.Run("curl", "-s", "-m", "10", "--connect-timeout", "5", "wttr.in/?format=%C+%t")
@@ -121,7 +121,7 @@ func addInfoActions(add func(*Action), now func() time.Time) {
 		return "El clima: " + out + ".", nil
 	}})
 
-	add(&Action{Name: "agenda", Desc: "decir el próximo evento de la agenda", Face: Curioso, Run: func(r Runner) (string, error) {
+	add(&Action{Name: "agenda", Desc: "decir el próximo evento de la agenda", Face: Curioso, Speaks: true, Run: func(r Runner) (string, error) {
 		// --day-format "" suprime el encabezado de día de khal; tomamos la 1ª línea NO vacía.
 		out, err := r.Run("khal", "list", "now", "24h", "--day-format", "", "--format", "{start-time} {title}")
 		if err != nil {

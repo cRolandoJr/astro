@@ -7,5 +7,9 @@ type Action struct {
 	Name string
 	Desc string // qué hace, en una línea — para el menú que ve el LLM
 	Face Expression
-	Run  func(r Runner) (reply string, err error)
+	// Speaks: la acción produce su PROPIA respuesta hablada (un DATO real: la hora, la fecha, el clima…)
+	// → wrap habla la salida de Run, NO el `say` del LLM (que inventaría el dato). Default false =
+	// acción de EFECTO (pausar, subir volumen…): se habla el `say` que redactó el LLM (más natural).
+	Speaks bool
+	Run    func(r Runner) (reply string, err error)
 }

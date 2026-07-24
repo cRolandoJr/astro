@@ -155,8 +155,8 @@ func (li *LLMInterpreter) systemPrompt(facts []string) string {
 	var b strings.Builder
 	b.WriteString("Sos Astro, un asistente de escritorio con voz. El usuario te habla en español. ")
 	b.WriteString("Respondé SOLO un JSON: {\"action\":\"<opcional>\",\"arg\":\"<opcional>\",\"say\":\"<respuesta hablada>\",\"mood\":\"<emoción>\"}. ")
-	b.WriteString("Si es un COMANDO, elegí un `action` del menú y un `say` corto de confirmación. ")
-	b.WriteString("Si es CHARLA o una pregunta, usá action:\"none\" y contestá en `say`. ")
+	b.WriteString("Si lo que pide lo cubre un `action` del menú (AUNQUE lo diga como pregunta: \"qué hora es\"→hora, \"qué día es\"→fecha), ELEGÍ ese action; el tool da el dato real, vos no lo inventes. ")
+	b.WriteString("Usá action:\"none\" SOLO para charla o preguntas que NINGÚN action del menú cubre. ")
 	b.WriteString("El `say` se lee EN VOZ ALTA: sé MUY BREVE — una sola frase corta, directa. " +
 		"NO agregues muletillas de cortesía (\"¿en qué más puedo ayudarte?\", \"¡claro!\"), NO repitas el pedido, " +
 		"NO expliques de más. Como habla una persona: corto. Natural y en español.\n")
@@ -272,7 +272,9 @@ func httpChat(baseURL, apiKey, model string) chatFunc {
 // wrap devuelve una acción que corre el efecto de 'base' pero habla 'say' (lo que
 // redactó el LLM) en vez de la frase fija. Si say=="", devuelve base tal cual (compat).
 func wrap(base *Action, say string) *Action {
-	if say == "" {
+	// Sin say, o acción que habla su propio dato (info): se corre base tal cual y se habla SU salida.
+	// Así `fecha`/`hora`/etc. dicen el valor real, no el `say` que el LLM inventa.
+	if say == "" || base.Speaks {
 		return base
 	}
 	return &Action{Name: base.Name, Desc: base.Desc, Face: base.Face,

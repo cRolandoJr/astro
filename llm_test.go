@@ -194,6 +194,19 @@ func TestLLMActionConSayHablaElSay(t *testing.T) {
 	}
 }
 
+func TestWrapInfoHablaSuDatoNoElSay(t *testing.T) {
+	// Acción de info (Speaks): debe hablar SU salida (dato real), ignorando el say inventado del LLM.
+	info := &Action{Name: "fecha", Speaks: true, Run: func(r Runner) (string, error) { return "Hoy es lunes.", nil }}
+	if got, _ := wrap(info, "Hoy es viernes 28 de marzo de 2025.").Run(&fakeRunner{}); got != "Hoy es lunes." {
+		t.Errorf("acción Speaks debe hablar su dato real, no el say del LLM; fue %q", got)
+	}
+	// Acción de efecto (no Speaks): habla el say del LLM (más natural).
+	fx := &Action{Name: "pausar", Run: func(r Runner) (string, error) { return "Listo.", nil }}
+	if got, _ := wrap(fx, "Dale, te pausé.").Run(&fakeRunner{}); got != "Dale, te pausé." {
+		t.Errorf("acción de efecto debe hablar el say; fue %q", got)
+	}
+}
+
 func TestWithMoodPoneLaCara(t *testing.T) {
 	if a := withMood(sayAction("hola"), "triste"); a.Face != Triste {
 		t.Errorf("mood 'triste' → Face=%v, quiero Triste", a.Face)
