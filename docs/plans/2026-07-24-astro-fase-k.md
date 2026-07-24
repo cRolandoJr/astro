@@ -22,16 +22,12 @@
 **Files:** Modify `actions.go`, `actions_test.go` (crear si no existe)
 **Produces:** tools `anterior`, `que_suena`, `silenciar_micro`, `bateria`, `fecha`, `clima`, `agenda`, `bloquear` en `buildActions`; helper `fechaES`.
 
-- [ ] **Step 1: Tests que fallan (`actions_test.go`)**
+- [ ] **Step 1: Tests que fallan — APPEND a `actions_test.go` (⚠️ YA EXISTE)**
+
+`actions_test.go` ya existe con 5 tests e importa `reflect, strings, testing, time` (cubren estos tests).
+**NO reescribas `package`/`import` ni toques los tests existentes** — solo **agregá estas funciones al final**:
 
 ```go
-package main
-
-import (
-	"testing"
-	"time"
-)
-
 func TestQueSuenaDiceLaCancion(t *testing.T) {
 	acts := buildActions(time.Now)
 	fake := &fakeRunner{output: "Nate Gentile - Mi PC Linux"}
@@ -58,6 +54,13 @@ func TestBateriaParseaPorcentaje(t *testing.T) {
 	if reply != "Batería al 87%." {
 		t.Fatalf("fue %q", reply)
 	}
+	// N1: ata que la 1ª llamada enumera y la 2ª pide info del device encontrado
+	if len(fake.calls) != 2 || !reflect.DeepEqual(fake.calls[0], []string{"upower", "-e"}) {
+		t.Fatalf("esperaba upower -e primero, fue %v", fake.calls)
+	}
+	if len(fake.calls[1]) < 3 || !strings.Contains(fake.calls[1][2], "battery_BAT0") {
+		t.Fatalf("esperaba upower -i <dev battery>, fue %v", fake.calls[1])
+	}
 }
 
 func TestFechaEnEspanol(t *testing.T) {
@@ -74,6 +77,16 @@ func TestClimaVacioAmable(t *testing.T) {
 	reply, err := acts["clima"].Run(&fakeRunner{output: ""})
 	if err != nil || reply != "No pude ver el clima." {
 		t.Fatalf("reply=%q err=%v", reply, err)
+	}
+}
+
+func TestAgendaPrimerEventoNoVacio(t *testing.T) {
+	acts := buildActions(time.Now)
+	// khal puede meter una línea vacía/encabezado; tomamos la 1ª NO vacía
+	fake := &fakeRunner{output: "\n10:00 Reunión con el equipo\n12:00 Almuerzo\n"}
+	reply, _ := acts["agenda"].Run(fake)
+	if reply != "Próximo: 10:00 Reunión con el equipo." {
+		t.Fatalf("fue %q", reply)
 	}
 }
 ```
@@ -143,7 +156,9 @@ func addInfoActions(add func(*Action), now func() time.Time) {
 	}})
 
 	add(&Action{Name: "clima", Desc: "decir el clima actual", Face: Curioso, Run: func(r Runner) (string, error) {
-		out, err := r.Run("curl", "-s", "wttr.in/?format=%C+%t")
+		// timeouts: clima es la única tool de red; sin -m/--connect-timeout un curl estancado
+		// colgaría el único goroutine del daemon (no procesaría más voz).
+		out, err := r.Run("curl", "-s", "-m", "10", "--connect-timeout", "5", "wttr.in/?format=%C+%t")
 		out = strings.TrimSpace(out)
 		if err != nil || out == "" {
 			return "No pude ver el clima.", nil
@@ -152,12 +167,17 @@ func addInfoActions(add func(*Action), now func() time.Time) {
 	}})
 
 	add(&Action{Name: "agenda", Desc: "decir el próximo evento de la agenda", Face: Curioso, Run: func(r Runner) (string, error) {
-		out, err := r.Run("khal", "list", "now", "24h", "--format", "{start-time} {title}")
-		out = strings.TrimSpace(out)
-		if err != nil || out == "" {
+		// --day-format "" suprime el encabezado de día de khal; tomamos la 1ª línea NO vacía.
+		out, err := r.Run("khal", "list", "now", "24h", "--day-format", "", "--format", "{start-time} {title}")
+		if err != nil {
 			return "No tenés nada en la agenda por ahora.", nil
 		}
-		return "Próximo: " + strings.SplitN(out, "\n", 2)[0] + ".", nil
+		for _, l := range strings.Split(out, "\n") {
+			if s := strings.TrimSpace(l); s != "" {
+				return "Próximo: " + s + ".", nil
+			}
+		}
+		return "No tenés nada en la agenda por ahora.", nil
 	}})
 
 	add(&Action{Name: "bloquear", Desc: "bloquear la pantalla", Face: Dormido, Run: func(r Runner) (string, error) {
@@ -240,7 +260,8 @@ Run: `nix shell nixpkgs#go --command go test ./... -run TestLLMArgTool` → FALL
 
 - [ ] **Step 3: `actions.go` — `ArgTool` + `buildArgActions`**
 
-Agregá `"net/url"` y `"strconv"` a los imports de `actions.go`. Agregá:
+Agregá **solo** `"strconv"` a los imports de `actions.go` (`strings` ya entró en Task 1; `net/url` recién se
+usa en Task 3 → agregarlo acá daría "imported and not used" = no compila). Agregá:
 ```go
 // ArgTool es una tool que necesita un argumento (el LLM lo pasa en `arg`). Build liga el arg y
 // devuelve la acción. Van en un mapa aparte porque el registro normal no lleva arg.
@@ -369,7 +390,7 @@ Run: `nix shell nixpkgs#go --command go test ./... -run 'TestArgBrillo|TestArgAb
 
 - [ ] **Step 3: Agregar al mapa de `buildArgActions` en `actions.go`**
 
-Dentro del `map[string]*ArgTool{…}`, agregá:
+Agregá `"net/url"` a los imports de `actions.go` (lo estrena `buscar`). Dentro del `map[string]*ArgTool{…}`, agregá:
 ```go
 		"brillo": {Desc: "ajustar el brillo (arg = subir, bajar, o un número 0-100)", Build: func(arg string) *Action {
 			return &Action{Name: "brillo", Face: Neutral, Run: func(r Runner) (string, error) {
