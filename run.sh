@@ -21,9 +21,12 @@ export ASTRO_EMBED_MODEL=gemini-embedding-001
 # Cara (eww), STT (whisper)
 export ASTRO_EWW_CONFIG="$PWD/eww"
 export ASTRO_WHISPER_MODEL="$HOME/modelos/ggml-small.bin"
-# VAD de captura: corta ~1s después de que te callás (default 1.5) → responde más ágil.
-# Subí si te corta cuando hacés una pausa al hablar.
-export ASTRO_REC_TRAIL_SEC=1.0
+# VAD de captura (corta sola al callarte). Con el micro boosteado el ambiente sube, así que:
+#  - SILENCE_PCT (umbral): 6% → el ruido de fondo cuenta como "silencio" y corta (default 3% se quedaba grabando).
+#  - TRAIL: 0.8s de silencio antes de cortar → responde ágil. Si te corta al hacer una pausa, subí TRAIL;
+#    si sigue grabando de más por ruido, subí SILENCE_PCT.
+export ASTRO_REC_SILENCE_PCT=6%
+export ASTRO_REC_TRAIL_SEC=0.8
 
 # Voz: Kokoro (neural, español) vía wrapper compat-piper. El FX +600 le da el timbre agudito.
 # LD_LIBRARY_PATH = libstdc++ (gcc) + zlib: los wheels de pip de Kokoro y de openWakeWord
