@@ -107,7 +107,7 @@ func addInfoActions(add func(*Action), now func() time.Time) {
 	}})
 
 	add(&Action{Name: "fecha", Desc: "decir el día y la fecha de hoy", Face: Neutral, Run: func(r Runner) (string, error) {
-		return "Hoy es " + fechaES(now()) + ".", nil
+		return "Hoy es " + spanishDate(now()) + ".", nil
 	}})
 
 	add(&Action{Name: "clima", Desc: "decir el clima actual", Face: Curioso, Run: func(r Runner) (string, error) {
@@ -143,8 +143,8 @@ func addInfoActions(add func(*Action), now func() time.Time) {
 	}})
 }
 
-// fechaES formatea la fecha en español (time.Format no localiza).
-func fechaES(t time.Time) string {
+// spanishDate formatea la fecha en español (time.Format no localiza).
+func spanishDate(t time.Time) string {
 	dias := []string{"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"}
 	meses := []string{"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"}
 	return fmt.Sprintf("%s %d de %s", dias[int(t.Weekday())], t.Day(), meses[int(t.Month())-1])
