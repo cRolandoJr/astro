@@ -79,6 +79,7 @@ func (v *VoiceInput) capture() (string, error) {
 		trail = "1.5"
 	}
 	if v.Face != nil {
+		_ = v.Face.Open()        // idle = cara oculta; aparece al empezar a escuchar
 		_ = v.Face.Show(Curioso) // cara de "te escucho" mientras grabás
 	}
 	fmt.Println("🎙️  hablá… (corta sola al callarte)")

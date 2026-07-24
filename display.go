@@ -6,7 +6,9 @@ import "fmt"
 // (pantalla), mañana ESP32Display (robot). Mismo contrato. (Ver nota de diseño del plan:
 // la mantenemos como interfaz por aprendizaje; en Go se podría extraer gratis después.)
 type Display interface {
+	Open() error // muestra la ventana de la cara (idle = cerrada)
 	Show(expr Expression) error
+	Close() error // oculta la ventana (al terminar el turno / al salir)
 }
 
 // EwwFace actualiza una variable de eww para que el widget muestre faces/<expr>.png.
