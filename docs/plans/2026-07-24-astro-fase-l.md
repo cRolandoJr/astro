@@ -28,39 +28,33 @@
 
 **Interfaces:**
 - Consumes: `normalize(s string) string` (de `interpreter.go`); `LLMConfig`, `LLMInterpreter`, `NewLLMInterpreter` (de `llm.go`).
-- Produces: `func isAffirmative(text string) bool`, `func isNegative(text string) bool`, `func isCatastrophic(cmd string) bool`; campo `LLMConfig.ExecEnabled bool`; campos `execEnabled bool`, `pendingCmd string` en `LLMInterpreter`; helper de test `newLLMExec(chat chatFunc) *LLMInterpreter`.
+- Produces: `func confirmationVerdict(text string) string` (devuelve `"yes"`/`"no"`/`"other"`), `func isCatastrophic(cmd string) bool`; campo `LLMConfig.ExecEnabled bool`; campos `execEnabled bool`, `pendingCmd string` en `LLMInterpreter`; helper de test `newLLMExec(chat chatFunc) *LLMInterpreter`.
+
+**Diseño de la confirmación (regla de seguridad, corregida tras auditoría del mentor):** una respuesta cuenta como sí/no SOLO si la frase **entera** es una confirmación — es decir, cada palabra es afirmativa, negativa o una muletilla. Si aparece **cualquier palabra ajena** (ej. `"ok mostrame la hora"`), es un pedido nuevo, no una confirmación → devuelve `"other"` → el flujo la reprocesa y NO corre el pendiente. Esto cierra el hueco de que una muletilla suelta (`ok`/`dale`) al inicio de un pedido nuevo dispare el comando. El negativo gana sobre el afirmativo (ante `"no, dale"` → `"no"`).
 
 - [ ] **Step 1: Escribir los tests de los helpers**
 
 En `llm_test.go`, agregá al final:
 
 ```go
-func TestIsAffirmative(t *testing.T) {
-	yes := []string{"sí", "si", "Dale", "dale, hacelo", "confirmo", "ok", "correlo", "sí, dale"}
-	no := []string{"no", "mejor no", "qué hora es", "contame un chiste", ""}
+func TestConfirmationVerdict(t *testing.T) {
+	yes := []string{"sí", "si", "Dale", "dale, hacelo", "confirmo", "ok", "correlo", "sí, dale", "obvio"}
+	no := []string{"no", "No", "cancelá", "cancelalo", "dejá", "olvidalo", "no, dale", "mejor no"}
+	// "other" = pedido nuevo (aunque arranque con muletilla) o frase que no es sí/no puro → NO corre.
+	other := []string{"ok mostrame la hora", "dale contame un chiste", "qué hora es", "", "hola cómo estás"}
 	for _, s := range yes {
-		if !isAffirmative(s) {
-			t.Errorf("isAffirmative(%q) = false, quiero true", s)
+		if got := confirmationVerdict(s); got != "yes" {
+			t.Errorf("confirmationVerdict(%q) = %q, quiero yes", s, got)
 		}
 	}
 	for _, s := range no {
-		if isAffirmative(s) {
-			t.Errorf("isAffirmative(%q) = true, quiero false", s)
+		if got := confirmationVerdict(s); got != "no" {
+			t.Errorf("confirmationVerdict(%q) = %q, quiero no", s, got)
 		}
 	}
-}
-
-func TestIsNegative(t *testing.T) {
-	yes := []string{"no", "No", "cancelá", "cancelalo", "dejá", "olvidalo", "no, mejor no"}
-	no := []string{"sí", "dale", "qué hora es", ""}
-	for _, s := range yes {
-		if !isNegative(s) {
-			t.Errorf("isNegative(%q) = false, quiero true", s)
-		}
-	}
-	for _, s := range no {
-		if isNegative(s) {
-			t.Errorf("isNegative(%q) = true, quiero false", s)
+	for _, s := range other {
+		if got := confirmationVerdict(s); got != "other" {
+			t.Errorf("confirmationVerdict(%q) = %q, quiero other", s, got)
 		}
 	}
 }
@@ -69,11 +63,11 @@ func TestIsCatastrophic(t *testing.T) {
 	bad := []string{
 		"rm -rf /", "rm -rf ~", "rm  -rf   /home", "RM -RF /", "sudo rm algo",
 		"dd if=/dev/zero of=/dev/sda", "mkfs.ext4 /dev/sda1", ":(){ :|:& };:",
-		"echo x > /dev/sda", "shutdown now", "reboot", "chmod -R / 777",
+		"echo x > /dev/sda", "cat x > /dev/nvme0n1", "shutdown now", "reboot", "chmod -R / 777",
 	}
 	ok := []string{
 		"echo hola", "ls -la ~/Descargas | wc -l", "git add .",
-		"rm archivo.txt", "rm -rf node_modules", "grep -r foo .",
+		"rm archivo.txt", "rm -rf node_modules", "grep -r foo .", "cat log 2> /dev/null",
 	}
 	for _, c := range bad {
 		if !isCatastrophic(c) {
@@ -88,42 +82,62 @@ func TestIsCatastrophic(t *testing.T) {
 }
 ```
 
-Nota sobre `"rm -rf node_modules"`: es relativo (no arranca en `/` ni `~`), por eso NO es catastrófico — se confirma manualmente como cualquier borrado. El backstop solo frena el borrado de raíz/home absolutos. (Ver la lista en el Step 3.)
+Notas: `"rm -rf node_modules"` es relativo (no arranca en `/` ni `~`) → NO catastrófico; se confirma como cualquier borrado. `"cat log 2> /dev/null"` es benigno (redirect a `/dev/null`, no a un block device) → NO catastrófico; por eso el backstop matchea `> /dev/sd`/`> /dev/nvme`, **no** `/dev/` a secas. Este host es NVMe, de ahí el patrón `nvme`.
 
 - [ ] **Step 2: Correr los tests para verlos fallar**
 
-Run: `cd ~/projects/astro && go test -run 'TestIsAffirmative|TestIsNegative|TestIsCatastrophic' .`
-Expected: FAIL — `undefined: isAffirmative` (y los otros dos).
+Run: `cd ~/projects/astro && go test -run 'TestConfirmationVerdict|TestIsCatastrophic' .`
+Expected: FAIL — `undefined: confirmationVerdict` / `undefined: isCatastrophic`.
 
 - [ ] **Step 3: Implementar los helpers**
 
-En `llm.go`, agregá `"unicode"` al bloque de imports (ordenado: queda después de `"time"`… en realidad va alfabético — poné `"unicode"` en su lugar). Luego agregá al final del archivo:
+En `llm.go`, agregá `"unicode"` al bloque de imports (en orden alfabético, después de `"time"`). Luego agregá al final del archivo:
 
 ```go
-// matchAny parte el texto en palabras (normalizado: minúsculas, sin acentos, sin puntuación)
-// y devuelve true si alguna está en el set. Tokeniza por letras para tolerar comas/puntos pegados.
-func matchAny(text string, words map[string]bool) bool {
-	toks := strings.FieldsFunc(normalize(text), func(r rune) bool { return !unicode.IsLetter(r) })
-	for _, tok := range toks {
-		if words[tok] {
-			return true
-		}
-	}
-	return false
-}
-
-// affirmatives/negatives: palabras que cuentan como confirmar o cancelar (ya normalizadas: "sí"→"si").
+// affirmatives/negatives/fillers: vocabulario de una confirmación sí/no (ya normalizado: "sí"→"si",
+// "cancelá"→"cancela"). fillers = muletillas que no cambian el sentido ("por favor", "che", "mejor no").
 var affirmatives = map[string]bool{
-	"si": true, "dale": true, "confirmo": true, "confirmar": true,
-	"hacelo": true, "hazlo": true, "correlo": true, "corre": true, "ok": true, "okay": true, "obvio": true,
+	"si": true, "dale": true, "confirmo": true, "confirmar": true, "confirma": true,
+	"hacelo": true, "hazlo": true, "correlo": true, "corre": true, "ok": true, "okay": true,
+	"obvio": true, "claro": true, "correcto": true, "exacto": true,
 }
 var negatives = map[string]bool{
 	"no": true, "cancela": true, "cancelalo": true, "cancelar": true,
-	"deja": true, "dejalo": true, "olvidalo": true,
+	"deja": true, "dejalo": true, "olvidalo": true, "nada": true,
+}
+var fillers = map[string]bool{
+	"che": true, "bueno": true, "ya": true, "por": true, "favor": true,
+	"eh": true, "que": true, "eso": true, "lo": true, "mejor": true,
 }
 
-func isAffirmative(text string) bool { return matchAny(text, affirmatives) }
-func isNegative(text string) bool    { return matchAny(text, negatives) }
+// confirmationVerdict clasifica una respuesta de confirmación en "yes"/"no"/"other". Solo es sí/no si
+// la frase ENTERA es una confirmación (cada token es afirmativo/negativo/muletilla); cualquier palabra
+// ajena → "other" (es un pedido nuevo, NO una confirmación) → default seguro: no corre. El negativo
+// gana sobre el afirmativo (ante "no, dale" → "no").
+func confirmationVerdict(text string) string {
+	toks := strings.FieldsFunc(normalize(text), func(r rune) bool { return !unicode.IsLetter(r) })
+	neg, aff := false, false
+	for _, t := range toks {
+		switch {
+		case negatives[t]:
+			neg = true
+		case affirmatives[t]:
+			aff = true
+		case fillers[t]:
+			// muletilla: se ignora
+		default:
+			return "other" // palabra ajena → pedido nuevo, no una confirmación pura
+		}
+	}
+	switch {
+	case neg:
+		return "no"
+	case aff:
+		return "yes"
+	default:
+		return "other" // vacío o solo muletillas
+	}
+}
 
 // isCatastrophic es un BACKSTOP: rechaza patrones que borran todo o rompen el sistema, aunque el
 // usuario confirme. NO es airtight (una denylist es gato-y-ratón); la guarda real es la confirmación.
@@ -131,7 +145,8 @@ func isCatastrophic(cmd string) bool {
 	c := strings.ToLower(strings.Join(strings.Fields(cmd), " ")) // colapsa espacios, a minúsculas
 	bad := []string{
 		"rm -rf /", "rm -fr /", "rm -rf ~", "rm -fr ~", "rm -rf /home",
-		"dd if=", "dd of=", "mkfs", "sudo ", ":(){", "> /dev/sd", "of=/dev/sd",
+		"dd if=", "dd of=", "mkfs", "sudo ", ":(){",
+		"> /dev/sd", "> /dev/nvme", "of=/dev/sd", "of=/dev/nvme",
 		"shutdown", "reboot", "chmod -r /", "chown -r /",
 	}
 	for _, b := range bad {
@@ -159,7 +174,13 @@ Y los campos a `LLMInterpreter` (tras `monitors`):
 	pendingCmd   string // comando `ejecutar` propuesto, esperando confirmación (vacío = ninguno)
 ```
 
-Y el wiring en `NewLLMInterpreter` (dentro del `return &LLMInterpreter{...}`, sumá al final):
+Y el wiring en `NewLLMInterpreter`: **REEMPLAZÁ** la línea que hoy dice (es la última del `return &LLMInterpreter{...}`, `llm.go:70`):
+
+```go
+		vision: cfg.Vision, monitors: cfg.Monitors,
+```
+
+por esta versión extendida (NO la dupliques — agregá solo `execEnabled`):
 
 ```go
 		vision: cfg.Vision, monitors: cfg.Monitors, execEnabled: cfg.ExecEnabled,
@@ -177,15 +198,15 @@ func newLLMExec(chat chatFunc) *LLMInterpreter {
 
 - [ ] **Step 4: Correr los tests para verlos pasar**
 
-Run: `cd ~/projects/astro && go test -run 'TestIsAffirmative|TestIsNegative|TestIsCatastrophic' .`
-Expected: PASS (3 tests).
+Run: `cd ~/projects/astro && go test -run 'TestConfirmationVerdict|TestIsCatastrophic' .`
+Expected: PASS (2 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cd ~/projects/astro
 git add llm.go llm_test.go
-git commit -m "feat(astro): estado ejecutar + helpers de confirmación y backstop catastrófico (Fase L Task 1)"
+git commit -m "feat(astro): estado ejecutar + confirmationVerdict (frase-entera) y backstop catastrófico (Fase L Task 1)"
 ```
 
 ---
@@ -263,29 +284,43 @@ Expected: FAIL — `TestEjecutarProponeNoCorre` falla porque `pendingCmd` queda 
 
 - [ ] **Step 3: Implementar `execAction` y la rama de ruteo**
 
-En `llm.go`, agregá `execAction` (cerca de `lookAction`):
+En `llm.go`, agregá `execAction` y el helper `clip` (cerca de `lookAction`):
 
 ```go
-// execAction corre un comando de shell YA CONFIRMADO por el usuario. Es el único punto del
-// sistema con shell arbitrario (`sh -c`), y solo se llega acá tras la confirmación de dos turnos.
-// La respuesta hablada es corta: la salida si es breve, un aviso si es larga, el error si falló.
+// execAction corre un comando de shell YA CONFIRMADO por el usuario. Es el único punto del sistema
+// con shell arbitrario, y solo se llega acá tras la confirmación de dos turnos. Va envuelto en
+// `timeout 60`: como el daemon es un solo goroutine, un comando colgado (sleep, algo que lee stdin)
+// lo congelaría entero (mismo criterio que el curl de `clima`). En fallo HABLA el error con err=nil,
+// porque main.go a los errores de Run los imprime en pantalla (Println), no los dice por voz.
 func execAction(cmd string) *Action {
 	return &Action{Name: "ejecutar", Face: Neutral,
 		Run: func(r Runner) (string, error) {
-			out, err := r.Run("sh", "-c", cmd)
-			if err != nil {
-				return "", fmt.Errorf("falló el comando: %w", err)
-			}
+			out, err := r.Run("timeout", "60", "sh", "-c", cmd)
 			out = strings.TrimSpace(out)
+			if err != nil {
+				if out == "" {
+					return "El comando falló.", nil
+				}
+				return "Falló: " + clip(out, 140), nil
+			}
 			switch {
 			case out == "":
 				return "Listo.", nil
 			case len(out) > 200:
-				return "Listo. La salida quedó en la terminal.", nil
+				return "Listo, pero la salida es muy larga para leértela.", nil
 			default:
 				return out, nil
 			}
 		}}
+}
+
+// clip recorta a lo sumo n runas (sin partir un carácter UTF-8), para no leer paredes de texto.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }
 ```
 
@@ -327,7 +362,7 @@ git commit -m "feat(astro): ruteo de ejecutar (propuesta/rechazo/gate) + execAct
 - Test: `llm_test.go`
 
 **Interfaces:**
-- Consumes: `isAffirmative`, `isNegative`, `execAction`, `sayAction`, `pendingCmd`, `newLLMExec` (Task 1/2); `fakeClock`, `newLLMClock` (existentes).
+- Consumes: `confirmationVerdict`, `execAction`, `sayAction`, `pendingCmd`, `newLLMExec` (Task 1/2); `fakeClock`, `newLLMClock` (existentes).
 - Produces: comportamiento de confirmación (turno 2); helper de test `newLLMExecClock(chat, clock)`.
 
 - [ ] **Step 1: Escribir los tests del flujo de confirmación**
@@ -369,7 +404,7 @@ func TestConfirmarCorreElComando(t *testing.T) {
 	if err != nil {
 		t.Fatalf("correr falló: %v", err)
 	}
-	want := []string{"sh", "-c", "echo hola"}
+	want := []string{"timeout", "60", "sh", "-c", "echo hola"}
 	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
 		t.Errorf("comando corrido = %v, quiero %v", got, want)
 	}
@@ -399,10 +434,11 @@ func TestNegativoCancela(t *testing.T) {
 }
 
 func TestAmbiguoCancelaYReprocesa(t *testing.T) {
-	// Tras una propuesta, algo que no es sí/no cancela el pendiente y se procesa como pedido nuevo.
+	// CLAVE de seguridad: un pedido nuevo que arranca con muletilla afirmativa ("ok, contame…") NO
+	// debe contar como confirmación. Cancela el pendiente y se reprocesa como pedido nuevo (no corre).
 	var llamado bool
 	chat := func(system string, history []Exchange, user string) (string, error) {
-		if user == "contame un chiste" {
+		if user == "ok, contame un chiste" {
 			llamado = true
 			return `{"action":"none","say":"un chiste corto"}`, nil
 		}
@@ -410,23 +446,39 @@ func TestAmbiguoCancelaYReprocesa(t *testing.T) {
 	}
 	li := newLLMExec(chat)
 	li.Interpret("decí hola") // propuesta
-	a, err := li.Interpret("contame un chiste")
+	a, err := li.Interpret("ok, contame un chiste")
 	if err != nil {
 		t.Fatalf("error inesperado: %v", err)
 	}
 	if li.pendingCmd != "" {
-		t.Errorf("un texto ambiguo debe cancelar el pendiente, pendingCmd = %q", li.pendingCmd)
+		t.Errorf("un pedido nuevo debe cancelar el pendiente, pendingCmd = %q", li.pendingCmd)
 	}
 	if !llamado {
-		t.Error("el texto ambiguo debe reprocesarse por el LLM")
+		t.Error("el pedido nuevo debe reprocesarse por el LLM")
 	}
 	fake := &fakeRunner{}
 	say, _ := a.Run(fake)
 	if len(fake.calls) != 0 {
-		t.Fatalf("no debe correr el comando pendiente, corrió: %v", fake.calls)
+		t.Fatalf("NO debe correr el comando pendiente, corrió: %v", fake.calls)
 	}
 	if say != "un chiste corto" {
 		t.Errorf("say = %q, quiero la respuesta del pedido nuevo", say)
+	}
+}
+
+func TestComandoFallidoHablaError(t *testing.T) {
+	// Un comando confirmado que falla debe HABLAR el error (err=nil): main.go a los errores de Run
+	// los imprime en pantalla, no los dice por voz → propagar el error dejaría a Astro mudo.
+	li := newLLMExec(fakeChat(`{"action":"ejecutar","arg":"false","say":"ok"}`, nil))
+	li.Interpret("hacé fallar algo") // propuesta
+	a, _ := li.Interpret("sí")       // confirmación
+	fake := &fakeRunner{output: "boom", err: fmt.Errorf("exit status 1")}
+	say, err := a.Run(fake)
+	if err != nil {
+		t.Fatalf("un comando fallido debe hablar el error con err=nil, no propagarlo: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(say), "fall") {
+		t.Errorf("say = %q, quiero que avise que falló", say)
 	}
 }
 
@@ -459,7 +511,7 @@ Asegurate de que `llm_test.go` importe `"reflect"` (ya se usa en otros tests del
 
 - [ ] **Step 2: Correr los tests para verlos fallar**
 
-Run: `cd ~/projects/astro && go test -run 'TestConfirmar|TestNegativo|TestAmbiguo|TestPendiente' .`
+Run: `cd ~/projects/astro && go test -run 'TestConfirmar|TestNegativo|TestAmbiguo|TestComandoFallido|TestPendiente' .`
 Expected: FAIL — sin el bloque de confirmación, `Interpret("sí")` llama al LLM (el `chat` de `TestConfirmarCorreElComando` devuelve error a propósito) o reprocesa; `pendingCmd` no se limpia.
 
 - [ ] **Step 3: Implementar el bloque de confirmación y la expiración**
@@ -479,24 +531,24 @@ Justo **después** de `li.lastTurn = now` (y antes del recall de memoria), agreg
 
 ```go
 	// Confirmación de un `ejecutar` pendiente: se resuelve acá, antes del LLM (es un sí/no, no un
-	// pedido nuevo). Negativo primero = default seguro: ante "no, dale" u otra ambigüedad, NO corre.
+	// pedido nuevo). "other" (pedido nuevo, aunque arranque con muletilla) descarta el pendiente y
+	// cae al flujo normal = default seguro: NO corre.
 	if li.pendingCmd != "" {
 		cmd := li.pendingCmd
 		li.pendingCmd = ""
-		switch {
-		case isNegative(text):
+		switch confirmationVerdict(text) {
+		case "no":
 			return sayAction("Listo, cancelado."), nil
-		case isAffirmative(text):
+		case "yes":
 			return execAction(cmd), nil
 		}
-		// Ni sí ni no: el pendiente se descarta y `text` sigue como pedido nuevo (cae al flujo normal).
 	}
 ```
 
 - [ ] **Step 4: Correr los tests para verlos pasar**
 
-Run: `cd ~/projects/astro && go test -run 'TestConfirmar|TestNegativo|TestAmbiguo|TestPendiente' .`
-Expected: PASS (4 tests).
+Run: `cd ~/projects/astro && go test -run 'TestConfirmar|TestNegativo|TestAmbiguo|TestComandoFallido|TestPendiente' .`
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -616,7 +668,7 @@ git commit -m "feat(astro): wirear ASTRO_EXEC (gate de ejecutar) en main y run.s
 
 ## Definition of Done
 
-1. `go build ./... && go vet ./... && go test ./...` verdes: helpers, propuesta-no-corre, confirma-corre (`sh -c`), negativo/ambiguo no corren, expiración, gate off→fallback, prompt condicional; + A–K intactos.
+1. `go build ./... && go vet ./... && go test ./...` verdes: `confirmationVerdict` (yes/no/other), backstop, propuesta-no-corre, confirma-corre (`timeout 60 sh -c`), fallo-habla-error, negativo/pedido-nuevo no corren, expiración, gate off→fallback, prompt condicional; + A–K intactos.
 2. Con `ASTRO_EXEC=1`: un pedido no cubierto → Astro **propone** el comando y pide confirmar; "sí" → lo corre y dice el resultado; "no"/ambiguo → cancela; un comando catastrófico → lo rechaza. (E2E queda pendiente del balance de DeepSeek, como Fase K.)
 3. `Interpret` sin cambios de firma; memoria/visión/tools previas intactas; nada destructivo sin confirmación.
 4. Convenciones: ids inglés, comentarios/mensajes español, solo stdlib.
@@ -624,5 +676,5 @@ git commit -m "feat(astro): wirear ASTRO_EXEC (gate de ejecutar) en main y run.s
 ## Notas de auto-revisión (self-review)
 
 - **Cobertura spec:** `ejecutar` (Task 2/4) · confirmación 2 turnos (Task 3) · backstop catastrófico (Task 1/2) · gate `ASTRO_EXEC` (Task 1/5) · systemPrompt (Task 4) · errores/bordes (tests de Task 2/3). ✔
-- **Consistencia de tipos:** `execAction(cmd string) *Action`, `isAffirmative/isNegative/isCatastrophic(...) bool`, `LLMConfig.ExecEnabled bool`, campos `execEnabled`/`pendingCmd` — usados con los mismos nombres en todas las tasks. ✔
+- **Consistencia de tipos:** `execAction(cmd string) *Action`, `confirmationVerdict(string) string` (`"yes"/"no"/"other"`), `isCatastrophic(string) bool`, `clip(string,int) string`, `LLMConfig.ExecEnabled bool`, campos `execEnabled`/`pendingCmd` — usados con los mismos nombres en todas las tasks. ✔
 - **Decisión asentada (vetable):** el backstop es **conservador** — `rm -rf /…` absoluto (raíz/home) se rechaza aunque apunte a un subdirectorio; borrados de rutas **relativas** sí se permiten (con confirmación). Es un belt honesto, no una sandbox.
