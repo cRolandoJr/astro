@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 )
 
 // WakeWordInput espera a que un sidecar (motor de wake-word) emita "DETECTED" por stdout y ahí
@@ -22,6 +23,10 @@ func NewWakeWordInput(wakeCmd string, voice *VoiceInput) (*WakeWordInput, error)
 		return nil, fmt.Errorf("modo wake: falta ASTRO_WAKE_CMD (comando del sidecar)")
 	}
 	cmd := exec.Command("sh", "-c", wakeCmd)
+	// Grupo de procesos propio: el sidecar suele ser un pipeline (grabador | python), y así
+	// Close() puede matar TODO el grupo de una (ver Close). Sin esto, matar el sh dejaría
+	// huérfanos a los hijos reteniendo el micrófono.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stderr = os.Stderr // los logs del sidecar (stderr) quedan visibles
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -52,6 +57,8 @@ func (w *WakeWordInput) Close() error {
 	if w.cmd == nil || w.cmd.Process == nil {
 		return nil
 	}
-	_ = w.cmd.Process.Kill()
+	// Matamos el GRUPO entero (-pid), no solo al sh: así también mueren el grabador y el python
+	// del pipeline. El sh es líder del grupo por el Setpgid de NewWakeWordInput.
+	_ = syscall.Kill(-w.cmd.Process.Pid, syscall.SIGKILL)
 	return w.cmd.Wait() // cosecha el zombie + cierra el pipe (completa el contrato de Start/StdoutPipe)
 }
