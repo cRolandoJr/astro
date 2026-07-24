@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
 // WakeWordInput espera a que un sidecar (motor de wake-word) emita "DETECTED" por stdout y ahí
@@ -49,7 +50,12 @@ func (w *WakeWordInput) Listen() (string, error) {
 		return "", fmt.Errorf("el sidecar de wake murió (cerró su stdout)")
 	}
 	fmt.Println("👂 ¡te escucho!")
-	return w.voice.capture()
+	t := time.Now()
+	text, err := w.voice.capture()
+	if os.Getenv("ASTRO_TIMING") == "1" {
+		fmt.Fprintf(os.Stderr, "⏱ captura(rec+whisper): %v\n", time.Since(t).Round(time.Millisecond))
+	}
+	return text, err
 }
 
 // Close mata el sidecar y lo cosecha. main lo llama con defer y en el handler de señal.

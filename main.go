@@ -107,6 +107,7 @@ func main() {
 	fmt.Println("Astro está despierto.")
 	chirps.Play("wake")
 
+	timing := os.Getenv("ASTRO_TIMING") == "1" // desglose de latencia por etapa (diagnóstico)
 	for {
 		text, err := input.Listen()
 		if err != nil {
@@ -125,7 +126,11 @@ func main() {
 				respond(face, voice, Pensativo, "No te escuché, repetí.")
 				return
 			}
+			tLLM := time.Now()
 			action, err := interpreter.Interpret(text)
+			if timing {
+				fmt.Fprintf(os.Stderr, "⏱ LLM: %v\n", time.Since(tLLM).Round(time.Millisecond))
+			}
 			if err != nil { // ErrNoEntiendo o cualquier error del cerebro: reacciona y sigue, sin crash
 				chirps.Play("confused")
 				respond(face, voice, Pensativo, "No te entendí.")
@@ -137,7 +142,11 @@ func main() {
 				fmt.Println("Ups:", err) // error de ejecución: dev-facing, solo pantalla
 				return
 			}
+			tTTS := time.Now()
 			respond(face, voice, action.Face, reply)
+			if timing {
+				fmt.Fprintf(os.Stderr, "⏱ TTS+resp: %v\n", time.Since(tTTS).Round(time.Millisecond))
+			}
 		}()
 	}
 	fmt.Println("\nChau 👋")

@@ -21,6 +21,9 @@ export ASTRO_EMBED_MODEL=gemini-embedding-001
 # Cara (eww), STT (whisper)
 export ASTRO_EWW_CONFIG="$PWD/eww"
 export ASTRO_WHISPER_MODEL="$HOME/modelos/ggml-small.bin"
+# VAD de captura: corta ~1s después de que te callás (default 1.5) → responde más ágil.
+# Subí si te corta cuando hacés una pausa al hablar.
+export ASTRO_REC_TRAIL_SEC=1.0
 
 # Voz: Kokoro (neural, español) vía wrapper compat-piper. El FX +600 le da el timbre agudito.
 # LD_LIBRARY_PATH = libstdc++ (gcc) + zlib: los wheels de pip de Kokoro y de openWakeWord
