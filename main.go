@@ -86,11 +86,9 @@ func main() {
 		WavPath: "/tmp/astro-chirp.wav", Specs: chirpSpecs,
 	}
 
-	// Astro abre su propia cara y la cierra al salir: con Ctrl+D (defer) y también si
-	// matan el proceso con Ctrl+C / kill (handler de señal), así no queda colgada.
-	if err := face.Open(); err != nil {
-		fmt.Fprintln(os.Stderr, "(no pude abrir la cara:", err, ")")
-	}
+	// La cara aparece SOLO durante un turno (capture() la abre al escuchar; el loop la cierra
+	// al terminar) → idle sin cara, no estorba. El defer/handler de señal la cierran al salir
+	// por si un turno la dejó abierta.
 	defer face.Close()
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -106,7 +104,6 @@ func main() {
 		os.Exit(0)
 	}()
 
-	_ = face.Show(Neutral)
 	fmt.Println("Astro está despierto.")
 	chirps.Play("wake")
 
@@ -120,26 +117,28 @@ func main() {
 			}
 			break
 		}
-		if text == "" {
-			chirps.Play("confused")
-			respond(face, voice, Pensativo, "No te escuché, repetí.")
-			continue
-		}
-
-		action, err := interpreter.Interpret(text)
-		if err != nil { // ErrNoEntiendo o cualquier error del cerebro: reacciona y sigue, sin crash
-			chirps.Play("confused")
-			respond(face, voice, Pensativo, "No te entendí.")
-			continue
-		}
-
-		reply, err := action.Run(runner)
-		if err != nil {
-			_ = face.Show(Neutral)
-			fmt.Println("Ups:", err) // error de ejecución: dev-facing, solo pantalla
-			continue
-		}
-		respond(face, voice, action.Face, reply)
+		// capture() abrió la cara al escuchar; la cerramos al terminar el turno (idle sin cara).
+		func() {
+			defer face.Close()
+			if text == "" {
+				chirps.Play("confused")
+				respond(face, voice, Pensativo, "No te escuché, repetí.")
+				return
+			}
+			action, err := interpreter.Interpret(text)
+			if err != nil { // ErrNoEntiendo o cualquier error del cerebro: reacciona y sigue, sin crash
+				chirps.Play("confused")
+				respond(face, voice, Pensativo, "No te entendí.")
+				return
+			}
+			reply, err := action.Run(runner)
+			if err != nil {
+				_ = face.Show(Neutral)
+				fmt.Println("Ups:", err) // error de ejecución: dev-facing, solo pantalla
+				return
+			}
+			respond(face, voice, action.Face, reply)
+		}()
 	}
 	fmt.Println("\nChau 👋")
 }

@@ -58,14 +58,16 @@ func TestVoiceCaptureErrorSiRecFalla(t *testing.T) {
 	}
 }
 
-type fakeDisplay struct{ shown []Expression }
-
-func (f *fakeDisplay) Show(e Expression) error {
-	f.shown = append(f.shown, e)
-	return nil
+type fakeDisplay struct {
+	opened, closed bool
+	shown          []Expression
 }
 
-func TestVoiceCaptureMuestraCaraEscuchando(t *testing.T) {
+func (f *fakeDisplay) Open() error             { f.opened = true; return nil }
+func (f *fakeDisplay) Close() error            { f.closed = true; return nil }
+func (f *fakeDisplay) Show(e Expression) error { f.shown = append(f.shown, e); return nil }
+
+func TestVoiceCaptureAbreYMuestraCaraEscuchando(t *testing.T) {
 	disp := &fakeDisplay{}
 	v := VoiceInput{
 		Runner: &fakeRunner{}, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
@@ -75,7 +77,10 @@ func TestVoiceCaptureMuestraCaraEscuchando(t *testing.T) {
 	if _, err := v.capture(); err != nil {
 		t.Fatalf("capture: %v", err)
 	}
+	if !disp.opened {
+		t.Fatal("esperaba que capture abriera la cara al empezar a escuchar")
+	}
 	if len(disp.shown) == 0 || disp.shown[0] != Curioso {
-		t.Fatalf("esperaba mostrar la cara 'Curioso' al empezar a escuchar, fue %v", disp.shown)
+		t.Fatalf("esperaba mostrar 'Curioso' al escuchar, fue %v", disp.shown)
 	}
 }
