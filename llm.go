@@ -195,6 +195,9 @@ func (li *LLMInterpreter) systemPrompt(facts []string) string {
 			b.WriteString("Monitores (elegí el name; x menor = más a la izquierda; si no aclarás, el enfocado): " + li.monitors + "\n")
 		}
 	}
+	if li.execEnabled {
+		b.WriteString("- ejecutar (arg = un comando de shell): SOLO para lo que ningún otro tool del menú cubre; se te confirmará antes de correr.\n")
+	}
 	argNames := make([]string, 0, len(li.argActions))
 	for n := range li.argActions {
 		argNames = append(argNames, n)

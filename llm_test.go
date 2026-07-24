@@ -593,3 +593,14 @@ func TestPendienteExpiraPorInactividad(t *testing.T) {
 		t.Fatalf("un 'sí' tardío NO debe correr el comando viejo, corrió: %v", fake.calls)
 	}
 }
+
+func TestSystemPromptListaEjecutarSoloConGate(t *testing.T) {
+	on := newLLMExec(fakeChat("", nil)).systemPrompt(nil)
+	if !strings.Contains(on, "ejecutar") {
+		t.Error("con el gate encendido, el prompt debe listar 'ejecutar'")
+	}
+	off := newLLM(fakeChat("", nil)).systemPrompt(nil)
+	if strings.Contains(off, "ejecutar") {
+		t.Error("con el gate apagado, el prompt NO debe listar 'ejecutar'")
+	}
+}
