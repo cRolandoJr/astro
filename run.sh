@@ -21,6 +21,10 @@ export ASTRO_EMBED_MODEL=gemini-embedding-001
 # Cara (eww), STT (whisper)
 export ASTRO_EWW_CONFIG="$PWD/eww"
 export ASTRO_WHISPER_MODEL="$HOME/modelos/ggml-small.bin"
+# Front-end de audio: capturar de la fuente PROCESADA de PipeWire (echo-cancel WebRTC: AEC +
+# supresión de ruido + pasa-altos), declarada en nix-config/modules/audio.nix. Limpia el audio para
+# whisper y el wake. El NIVEL se da subiendo el micro real (~2.5, wpctl) para que la voz sobreviva al NS.
+export PULSE_SOURCE=astro_echo_cancel_source
 # VAD de captura (corta sola al callarte). Con el micro boosteado el ambiente sube, así que:
 #  - SILENCE_PCT (umbral): 6% → el ruido de fondo cuenta como "silencio" y corta (default 3% se quedaba grabando).
 #  - TRAIL: 0.8s de silencio antes de cortar → responde ágil. Si te corta al hacer una pausa, subí TRAIL;
@@ -41,8 +45,8 @@ export ASTRO_VOICE_FX="gain -3 pitch 600"
 # ASTRO_OWW_MODEL vacío = "hey_jarvis" (pre-entrenado, para validar); luego apuntará al modelo "Astro".
 # Para volver al modo tecla: ASTRO_INPUT=hotkey (SUPER+SHIFT+A) sigue disponible.
 export ASTRO_INPUT=wake
-# Sin gain en el pipeline: el nivel se maneja a nivel de sistema (wpctl set-volume del micro ~1.5),
-# así el wake Y la captura de whisper reciben buen audio de una sola fuente de verdad.
+# Sin gain en el pipeline: el nivel lo da el micro real (wpctl ~2.5) y el audio ya viene limpio por
+# la fuente echo-cancel (PULSE_SOURCE arriba). El wake y whisper toman la misma fuente procesada.
 export ASTRO_WAKE_CMD="rec -q -c 1 -r 16000 -b 16 -e signed-integer -t raw - 2>/dev/null | $HOME/.venvs/astro-wake-oww/bin/python $PWD/scripts/wake_oww.py"
 # ASTRO_OWW_MODEL: vacío = "hey_jarvis". Para el test del loop usá alexa (export antes de ./run.sh);
 # luego apuntará al modelo "Astro" entrenado. ASTRO_OWW_THRESHOLD sube/baja la sensibilidad.
