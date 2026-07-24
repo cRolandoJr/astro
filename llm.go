@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Exchange es un turno de la charla (lo que dijo el usuario y lo que respondió Astro).
@@ -34,6 +35,8 @@ type LLMInterpreter struct {
 	lastTurn     time.Time
 	vision       visionFunc
 	monitors     string
+	execEnabled  bool
+	pendingCmd   string // comando `ejecutar` propuesto, esperando confirmación (vacío = ninguno)
 }
 
 // LLMConfig junta la config del intérprete (creció más allá de lo que conviene posicional).
@@ -49,6 +52,7 @@ type LLMConfig struct {
 	IdleWindow   time.Duration    // <=0 → 5 min
 	Vision       visionFunc       // opcional (nil = sin visión)
 	Monitors     string           // lista de monitores para el prompt (vacía = sin resolución de nombres)
+	ExecEnabled  bool             // habilita el action `ejecutar` (shell con confirmación); default off
 }
 
 func NewLLMInterpreter(cfg LLMConfig) *LLMInterpreter {
@@ -67,7 +71,7 @@ func NewLLMInterpreter(cfg LLMConfig) *LLMInterpreter {
 	return &LLMInterpreter{
 		chat: cfg.Chat, actions: cfg.Actions, argActions: cfg.ArgActions, fallback: cfg.Fallback, mem: cfg.Mem,
 		topK: cfg.TopK, now: cfg.Now, historyTurns: cfg.HistoryTurns, idleWindow: cfg.IdleWindow,
-		vision: cfg.Vision, monitors: cfg.Monitors,
+		vision: cfg.Vision, monitors: cfg.Monitors, execEnabled: cfg.ExecEnabled,
 	}
 }
 
@@ -306,4 +310,67 @@ func (li *LLMInterpreter) remember(user, assistant string) {
 	if len(li.history) > li.historyTurns {
 		li.history = li.history[len(li.history)-li.historyTurns:]
 	}
+}
+
+// affirmatives/negatives/fillers: vocabulario de una confirmación sí/no (ya normalizado: "sí"→"si",
+// "cancelá"→"cancela"). fillers = muletillas que no cambian el sentido ("por favor", "che", "mejor no").
+var affirmatives = map[string]bool{
+	"si": true, "dale": true, "confirmo": true, "confirmar": true, "confirma": true,
+	"hacelo": true, "hazlo": true, "correlo": true, "corre": true, "ok": true, "okay": true,
+	"obvio": true, "claro": true, "correcto": true, "exacto": true,
+}
+var negatives = map[string]bool{
+	"no": true, "cancela": true, "cancelalo": true, "cancelar": true,
+	"deja": true, "dejalo": true, "olvidalo": true, "nada": true,
+}
+var fillers = map[string]bool{
+	"che": true, "bueno": true, "ya": true, "por": true, "favor": true,
+	"eh": true, "que": true, "eso": true, "lo": true, "mejor": true,
+}
+
+// confirmationVerdict clasifica una respuesta de confirmación en "yes"/"no"/"other". Solo es sí/no si
+// la frase ENTERA es una confirmación (cada token es afirmativo/negativo/muletilla); cualquier palabra
+// ajena → "other" (es un pedido nuevo, NO una confirmación) → default seguro: no corre. El negativo
+// gana sobre el afirmativo (ante "no, dale" → "no").
+func confirmationVerdict(text string) string {
+	toks := strings.FieldsFunc(normalize(text), func(r rune) bool { return !unicode.IsLetter(r) })
+	neg, aff := false, false
+	for _, t := range toks {
+		switch {
+		case negatives[t]:
+			neg = true
+		case affirmatives[t]:
+			aff = true
+		case fillers[t]:
+			// muletilla: se ignora
+		default:
+			return "other" // palabra ajena → pedido nuevo, no una confirmación pura
+		}
+	}
+	switch {
+	case neg:
+		return "no"
+	case aff:
+		return "yes"
+	default:
+		return "other" // vacío o solo muletillas
+	}
+}
+
+// isCatastrophic es un BACKSTOP: rechaza patrones que borran todo o rompen el sistema, aunque el
+// usuario confirme. NO es airtight (una denylist es gato-y-ratón); la guarda real es la confirmación.
+func isCatastrophic(cmd string) bool {
+	c := strings.ToLower(strings.Join(strings.Fields(cmd), " ")) // colapsa espacios, a minúsculas
+	bad := []string{
+		"rm -rf /", "rm -fr /", "rm -rf ~", "rm -fr ~", "rm -rf /home",
+		"dd if=", "dd of=", "mkfs", "sudo ", ":(){",
+		"> /dev/sd", "> /dev/nvme", "of=/dev/sd", "of=/dev/nvme",
+		"shutdown", "reboot", "chmod -r /", "chown -r /",
+	}
+	for _, b := range bad {
+		if strings.Contains(c, b) {
+			return true
+		}
+	}
+	return false
 }

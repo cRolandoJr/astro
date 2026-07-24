@@ -18,6 +18,12 @@ func newLLM(chat chatFunc) *LLMInterpreter {
 	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts)})
 }
 
+func newLLMExec(chat chatFunc) *LLMInterpreter {
+	acts := buildActions(time.Now)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts),
+		ArgActions: buildArgActions(), ExecEnabled: true})
+}
+
 // fakeMemory: MemoryStore de test. Registra lo guardado y devuelve un Recall fijo.
 type fakeMemory struct {
 	remembered []string
@@ -359,5 +365,49 @@ func TestLLMMirarSinVisionVaAFallback(t *testing.T) {
 	a, err := newLLM(fakeChat(`{"action":"mirar","arg":"","say":"ok"}`, nil)).Interpret("mirá la pantalla")
 	if a != nil || !errors.Is(err, ErrNoEntiendo) {
 		t.Fatalf("sin visión, mirar debe caer al fallback; a=%v err=%v", a, err)
+	}
+}
+
+func TestConfirmationVerdict(t *testing.T) {
+	yes := []string{"sí", "si", "Dale", "dale, hacelo", "confirmo", "ok", "correlo", "sí, dale", "obvio"}
+	no := []string{"no", "No", "cancelá", "cancelalo", "dejá", "olvidalo", "no, dale", "mejor no"}
+	// "other" = pedido nuevo (aunque arranque con muletilla) o frase que no es sí/no puro → NO corre.
+	other := []string{"ok mostrame la hora", "dale contame un chiste", "qué hora es", "", "hola cómo estás"}
+	for _, s := range yes {
+		if got := confirmationVerdict(s); got != "yes" {
+			t.Errorf("confirmationVerdict(%q) = %q, quiero yes", s, got)
+		}
+	}
+	for _, s := range no {
+		if got := confirmationVerdict(s); got != "no" {
+			t.Errorf("confirmationVerdict(%q) = %q, quiero no", s, got)
+		}
+	}
+	for _, s := range other {
+		if got := confirmationVerdict(s); got != "other" {
+			t.Errorf("confirmationVerdict(%q) = %q, quiero other", s, got)
+		}
+	}
+}
+
+func TestIsCatastrophic(t *testing.T) {
+	bad := []string{
+		"rm -rf /", "rm -rf ~", "rm  -rf   /home", "RM -RF /", "sudo rm algo",
+		"dd if=/dev/zero of=/dev/sda", "mkfs.ext4 /dev/sda1", ":(){ :|:& };:",
+		"echo x > /dev/sda", "cat x > /dev/nvme0n1", "shutdown now", "reboot", "chmod -R / 777",
+	}
+	ok := []string{
+		"echo hola", "ls -la ~/Descargas | wc -l", "git add .",
+		"rm archivo.txt", "rm -rf node_modules", "grep -r foo .", "cat log 2> /dev/null",
+	}
+	for _, c := range bad {
+		if !isCatastrophic(c) {
+			t.Errorf("isCatastrophic(%q) = false, quiero true", c)
+		}
+	}
+	for _, c := range ok {
+		if isCatastrophic(c) {
+			t.Errorf("isCatastrophic(%q) = true, quiero false", c)
+		}
 	}
 }
