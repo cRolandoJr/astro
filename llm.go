@@ -139,6 +139,9 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 var moods = map[string]Expression{
 	"feliz": Feliz, "triste": Triste, "curioso": Curioso, "pensativo": Pensativo,
 	"sorprendido": Sorprendido, "neutral": Neutral, "enojado": Enojado, "amor": Amor,
+	// alias que el modelo emite a veces (sinónimos / inglés) → misma cara, para no perder la reacción
+	"alegre": Feliz, "contento": Feliz, "happy": Feliz, "sad": Triste, "enojada": Enojado,
+	"angry": Enojado, "curious": Curioso, "surprised": Sorprendido, "cariño": Amor,
 }
 
 // withMood pone la cara según la emoción que eligió el LLM (reacción al tono de la charla). Mood vacío
@@ -180,7 +183,7 @@ func (li *LLMInterpreter) systemPrompt(facts []string) string {
 	for _, n := range names {
 		fmt.Fprintf(&b, "- %s: %s\n", n, li.actions[n].Desc)
 	}
-	b.WriteString("- open (arg = nombre de la app): abrir una app o programa\n")
+	b.WriteString("- open (arg = nombre de la app): abrir una APP/PROGRAMA instalado (firefox, chromium, spotify, obsidian…). NO para sitios web ni páginas.\n")
 	if li.mem != nil {
 		b.WriteString("- recordar (arg = el hecho a recordar): guardá algo que el usuario te pide recordar\n")
 	}

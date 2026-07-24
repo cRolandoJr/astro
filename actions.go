@@ -193,7 +193,7 @@ func buildArgActions() map[string]*ArgTool {
 				return "Brillo ajustado.", nil
 			}}
 		}},
-		"abrir_url": {Desc: "abrir una URL en el navegador (arg = la url)", Build: func(arg string) *Action {
+		"abrir_url": {Desc: "abrir un SITIO WEB o página en el navegador (youtube, gmail, una url). Usá esto para páginas, NO open. arg = el dominio completo (youtube.com, gmail.com) o la url", Build: func(arg string) *Action {
 			return &Action{Name: "abrir_url", Face: Curioso, Run: func(r Runner) (string, error) {
 				u := strings.TrimSpace(arg)
 				if u == "" {
