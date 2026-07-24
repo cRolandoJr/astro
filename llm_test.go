@@ -415,8 +415,8 @@ func TestEjecutarGateOffCaeAFallback(t *testing.T) {
 	// Sin ExecEnabled: ejecutar no existe → fallback (reglas). No debe armar pendiente.
 	acts := buildActions(time.Now)
 	li := NewLLMInterpreter(LLMConfig{
-		Chat:     fakeChat(`{"action":"ejecutar","arg":"echo hola","say":"ok"}`, nil),
-		Actions:  acts, Fallback: NewRuleInterpreter(acts),
+		Chat:    fakeChat(`{"action":"ejecutar","arg":"echo hola","say":"ok"}`, nil),
+		Actions: acts, Fallback: NewRuleInterpreter(acts),
 	})
 	_, _ = li.Interpret("hacé cualquier cosa rara")
 	if li.pendingCmd != "" {
