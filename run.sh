@@ -23,15 +23,20 @@ export ASTRO_EWW_CONFIG="$PWD/eww"
 export ASTRO_WHISPER_MODEL="$HOME/modelos/ggml-small.bin"
 
 # Voz: Kokoro (neural, español) vía wrapper compat-piper. El FX +600 le da el timbre agudito.
-# LD_LIBRARY_PATH = la libstdc++ de gcc (los wheels de pip de Kokoro la necesitan en NixOS);
-# se calcula una vez acá (no por frase).
-export LD_LIBRARY_PATH="$(nix build --no-link --print-out-paths nixpkgs#stdenv.cc.cc.lib)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# LD_LIBRARY_PATH = libstdc++ (gcc) + zlib: los wheels de pip de Kokoro y de openWakeWord
+# (onnxruntime, wake-word) las necesitan en NixOS. Se calcula una vez acá (no por frase).
+export LD_LIBRARY_PATH="$(nix build --no-link --print-out-paths nixpkgs#stdenv.cc.cc.lib)/lib:$(nix build --no-link --print-out-paths nixpkgs#zlib)/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export ASTRO_PIPER_BIN="$PWD/scripts/kokoro-say"
 export ASTRO_PIPER_VOICE="ef_dora"
 export ASTRO_VOICE_FX="gain -3 pitch 600"
 
-# Activación por voz sin Enter: apretás SUPER+SHIFT+A (bind de Hyprland) y Astro escucha una vez.
-export ASTRO_INPUT=hotkey
+# Activación 100% hands-free por wake-word (openWakeWord). El sidecar escucha el micro y avisa a
+# Astro por stdout (DETECTED). Sidecar = grabador (rec → PCM crudo s16le) | python con openWakeWord.
+# ASTRO_OWW_MODEL vacío = "hey_jarvis" (pre-entrenado, para validar); luego apuntará al modelo "Astro".
+# Para volver al modo tecla: ASTRO_INPUT=hotkey (SUPER+SHIFT+A) sigue disponible.
+export ASTRO_INPUT=wake
+export ASTRO_WAKE_CMD="rec -q -c 1 -r 16000 -b 16 -e signed-integer -t raw - 2>/dev/null | $HOME/.venvs/astro-wake-oww/bin/python $PWD/scripts/wake_oww.py"
+# export ASTRO_OWW_THRESHOLD=0.5   # subí si dispara solo; bajá si le cuesta engancharte
 
 # Astro no tiene deps de C → compilar en Go puro (resolver netgo). Evita necesitar gcc, que no está
 # en el PATH mínimo del servicio systemd (interactivo andaba porque tu shell de login sí lo tiene).
