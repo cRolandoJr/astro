@@ -32,7 +32,7 @@ func main() {
 			Chat:    httpChat(llmURL, llmKey, envOr("ASTRO_LLM_MODEL", "gemini-flash-latest")),
 			Actions: acts, ArgActions: buildArgActions(), Fallback: rules, Mem: buildMemory(embed), TopK: topK, Now: time.Now,
 			HistoryTurns: historyTurns, IdleWindow: time.Duration(idleMin) * time.Minute,
-			Vision: vision, Monitors: buildMonitorsPrompt(runner),
+			Vision: vision, Monitors: buildMonitorsPrompt(runner), ExecEnabled: os.Getenv("ASTRO_EXEC") == "1",
 		})
 	}
 
