@@ -48,8 +48,10 @@ export ASTRO_INPUT=wake
 # Sin gain en el pipeline: el nivel lo da el micro real (wpctl ~2.5) y el audio ya viene limpio por
 # la fuente echo-cancel (PULSE_SOURCE arriba). El wake y whisper toman la misma fuente procesada.
 export ASTRO_WAKE_CMD="rec -q -c 1 -r 16000 -b 16 -e signed-integer -t raw - 2>/dev/null | $HOME/.venvs/astro-wake-oww/bin/python $PWD/scripts/wake_oww.py"
-# ASTRO_OWW_MODEL: vacío = "hey_jarvis". Para el test del loop usá alexa (export antes de ./run.sh);
-# luego apuntará al modelo "Astro" entrenado. ASTRO_OWW_THRESHOLD sube/baja la sensibilidad.
+# ASTRO_OWW_MODEL: modelo del wake-word. "alexa" = placeholder que engancha bien tu dicción (el
+# "hey_jarvis" no); se reemplazará por el modelo "Astro" entrenado. Va acá (no export manual) para
+# que el SERVICIO systemd lo use. ASTRO_OWW_THRESHOLD sube/baja la sensibilidad.
+export ASTRO_OWW_MODEL=alexa
 # export ASTRO_OWW_THRESHOLD=0.5
 # Ventana de conversación: cuánto escucha tras cada respuesta SIN re-decir "alexa" antes de dormir.
 # 60s = charla relajada (podés pensar entre pedidos). Si no hablás, se duerme al llegar al tope.
