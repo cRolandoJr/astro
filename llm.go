@@ -80,8 +80,22 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	// Reset por inactividad: si pasó demasiado desde la última frase, es charla nueva.
 	if !li.lastTurn.IsZero() && now.Sub(li.lastTurn) > li.idleWindow {
 		li.history = nil
+		li.pendingCmd = "" // un comando propuesto hace rato NO se confirma "a ciegas"
 	}
 	li.lastTurn = now
+	// Confirmación de un `ejecutar` pendiente: se resuelve acá, antes del LLM (es un sí/no, no un
+	// pedido nuevo). "other" (pedido nuevo, aunque arranque con muletilla) descarta el pendiente y
+	// cae al flujo normal = default seguro: NO corre.
+	if li.pendingCmd != "" {
+		cmd := li.pendingCmd
+		li.pendingCmd = ""
+		switch confirmationVerdict(text) {
+		case "no":
+			return sayAction("Listo, cancelado."), nil
+		case "yes":
+			return execAction(cmd), nil
+		}
+	}
 	var facts []string
 	if li.mem != nil {
 		f, err := li.mem.Recall(text, li.topK)

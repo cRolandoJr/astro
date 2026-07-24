@@ -239,6 +239,12 @@ func newLLMClock(chat chatFunc, clock *fakeClock) *LLMInterpreter {
 		Now: clock.now, IdleWindow: 5 * time.Minute})
 }
 
+func newLLMExecClock(chat chatFunc, clock *fakeClock) *LLMInterpreter {
+	acts := buildActions(time.Now)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts),
+		ArgActions: buildArgActions(), ExecEnabled: true, Now: clock.now, IdleWindow: 5 * time.Minute})
+}
+
 func TestLLMPasaHistorialAlSegundoTurno(t *testing.T) {
 	var seen []Exchange
 	chat := func(system string, history []Exchange, user string) (string, error) {
@@ -459,5 +465,131 @@ func TestIsCatastrophic(t *testing.T) {
 		if isCatastrophic(c) {
 			t.Errorf("isCatastrophic(%q) = true, quiero false", c)
 		}
+	}
+}
+
+func TestConfirmarCorreElComando(t *testing.T) {
+	// El chat debe fallar si se lo llama en el turno de confirmación (la confirmación va antes del LLM).
+	chat := func(system string, history []Exchange, user string) (string, error) {
+		if user == "sí" {
+			return "", fmt.Errorf("el LLM NO debe llamarse en la confirmación")
+		}
+		return `{"action":"ejecutar","arg":"echo hola","say":"ok"}`, nil
+	}
+	li := newLLMExec(chat)
+	if _, err := li.Interpret("decí hola por consola"); err != nil { // propuesta
+		t.Fatalf("propuesta falló: %v", err)
+	}
+	a, err := li.Interpret("sí") // confirmación
+	if err != nil {
+		t.Fatalf("confirmación falló: %v", err)
+	}
+	if li.pendingCmd != "" {
+		t.Errorf("tras confirmar, pendingCmd debe quedar vacío, es %q", li.pendingCmd)
+	}
+	fake := &fakeRunner{output: "hola"}
+	say, err := a.Run(fake)
+	if err != nil {
+		t.Fatalf("correr falló: %v", err)
+	}
+	want := []string{"timeout", "60", "sh", "-c", "echo hola"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Errorf("comando corrido = %v, quiero %v", got, want)
+	}
+	if say != "hola" {
+		t.Errorf("say = %q, quiero la salida 'hola'", say)
+	}
+}
+
+func TestNegativoCancela(t *testing.T) {
+	li := newLLMExec(fakeChat(`{"action":"ejecutar","arg":"echo hola","say":"ok"}`, nil))
+	li.Interpret("decí hola") // propuesta
+	a, err := li.Interpret("no")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+	if li.pendingCmd != "" {
+		t.Errorf("tras cancelar, pendingCmd debe quedar vacío, es %q", li.pendingCmd)
+	}
+	fake := &fakeRunner{}
+	say, _ := a.Run(fake)
+	if len(fake.calls) != 0 {
+		t.Fatalf("cancelar NO debe correr nada, corrió: %v", fake.calls)
+	}
+	if !strings.Contains(strings.ToLower(say), "cancel") {
+		t.Errorf("say = %q, quiero un aviso de cancelado", say)
+	}
+}
+
+func TestAmbiguoCancelaYReprocesa(t *testing.T) {
+	// CLAVE de seguridad: un pedido nuevo que arranca con muletilla afirmativa ("ok, contame…") NO
+	// debe contar como confirmación. Cancela el pendiente y se reprocesa como pedido nuevo (no corre).
+	var llamado bool
+	chat := func(system string, history []Exchange, user string) (string, error) {
+		if user == "ok, contame un chiste" {
+			llamado = true
+			return `{"action":"none","say":"un chiste corto"}`, nil
+		}
+		return `{"action":"ejecutar","arg":"echo hola","say":"ok"}`, nil
+	}
+	li := newLLMExec(chat)
+	li.Interpret("decí hola") // propuesta
+	a, err := li.Interpret("ok, contame un chiste")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+	if li.pendingCmd != "" {
+		t.Errorf("un pedido nuevo debe cancelar el pendiente, pendingCmd = %q", li.pendingCmd)
+	}
+	if !llamado {
+		t.Error("el pedido nuevo debe reprocesarse por el LLM")
+	}
+	fake := &fakeRunner{}
+	say, _ := a.Run(fake)
+	if len(fake.calls) != 0 {
+		t.Fatalf("NO debe correr el comando pendiente, corrió: %v", fake.calls)
+	}
+	if say != "un chiste corto" {
+		t.Errorf("say = %q, quiero la respuesta del pedido nuevo", say)
+	}
+}
+
+func TestComandoFallidoHablaError(t *testing.T) {
+	// Un comando confirmado que falla debe HABLAR el error (err=nil): main.go a los errores de Run
+	// los imprime en pantalla, no los dice por voz → propagar el error dejaría a Astro mudo.
+	li := newLLMExec(fakeChat(`{"action":"ejecutar","arg":"false","say":"ok"}`, nil))
+	li.Interpret("hacé fallar algo") // propuesta
+	a, _ := li.Interpret("sí")       // confirmación
+	fake := &fakeRunner{output: "boom", err: fmt.Errorf("exit status 1")}
+	say, err := a.Run(fake)
+	if err != nil {
+		t.Fatalf("un comando fallido debe hablar el error con err=nil, no propagarlo: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(say), "fall") {
+		t.Errorf("say = %q, quiero que avise que falló", say)
+	}
+}
+
+func TestPendienteExpiraPorInactividad(t *testing.T) {
+	chat := func(system string, history []Exchange, user string) (string, error) {
+		if user == "sí" {
+			return `{"action":"none","say":"ok"}`, nil // se reprocesa como charla, no como confirmación
+		}
+		return `{"action":"ejecutar","arg":"echo hola","say":"ok"}`, nil
+	}
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	li := newLLMExecClock(chat, clock)
+	li.Interpret("decí hola")              // propuesta, pendiente armado
+	clock.t = clock.t.Add(6 * time.Minute) // pasa la ventana de inactividad
+	a, err := li.Interpret("sí")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+	if li.pendingCmd != "" {
+		t.Errorf("el pendiente debe expirar por inactividad, pendingCmd = %q", li.pendingCmd)
+	}
+	fake := &fakeRunner{}
+	if _, _ = a.Run(fake); len(fake.calls) != 0 {
+		t.Fatalf("un 'sí' tardío NO debe correr el comando viejo, corrió: %v", fake.calls)
 	}
 }
