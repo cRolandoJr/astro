@@ -194,6 +194,26 @@ func TestLLMActionConSayHablaElSay(t *testing.T) {
 	}
 }
 
+func TestWithMoodPoneLaCara(t *testing.T) {
+	if a := withMood(sayAction("hola"), "triste"); a.Face != Triste {
+		t.Errorf("mood 'triste' → Face=%v, quiero Triste", a.Face)
+	}
+	base := &Action{Face: Neutral}
+	if withMood(base, "").Face != Neutral || withMood(base, "desconocido").Face != Neutral {
+		t.Error("mood vacío/desconocido no debe cambiar la cara")
+	}
+}
+
+func TestLLMCharlaUsaElMood(t *testing.T) {
+	a, err := newLLM(fakeChat(`{"action":"none","say":"perdón","mood":"triste"}`, nil)).Interpret("sos un desastre")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	if a.Face != Triste {
+		t.Errorf("la charla debe reflejar el mood del LLM: Face=%v, quiero Triste", a.Face)
+	}
+}
+
 func TestLLMCharlaSoloHabla(t *testing.T) {
 	fake := &fakeRunner{}
 	a, err := newLLM(fakeChat(`{"action":"none","say":"Estoy bien, ¿y vos?"}`, nil)).Interpret("cómo estás")

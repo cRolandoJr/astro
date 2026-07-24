@@ -98,6 +98,7 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 		Action string `json:"action"`
 		Arg    string `json:"arg"`
 		Say    string `json:"say"`
+		Mood   string `json:"mood"` // emoción que eligió el LLM según el tono → maneja la cara
 	}
 	if jerr := json.Unmarshal([]byte(extractJSON(reply)), &choice); jerr != nil {
 		fmt.Fprintln(os.Stderr, "(respuesta LLM no-JSON, uso reglas:", reply, ")")
@@ -106,43 +107,64 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 	// Charla pura: sin acción (o "none") pero con say → solo hablar.
 	if (choice.Action == "" || choice.Action == "none") && choice.Say != "" {
 		li.remember(text, choice.Say)
-		return sayAction(choice.Say), nil
+		return withMood(sayAction(choice.Say), choice.Mood), nil
 	}
 	if choice.Action == "recordar" && li.mem != nil && choice.Arg != "" {
 		li.remember(text, choice.Say)
-		return wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), nil
+		return withMood(wrap(memoryWriteAction(li.mem, choice.Arg), choice.Say), choice.Mood), nil
 	}
 	if choice.Action == "mirar" && li.vision != nil {
-		return lookAction(li.vision, choice.Arg, text), nil // stateless: no se registra en historial
+		return withMood(lookAction(li.vision, choice.Arg, text), choice.Mood), nil // stateless: no se registra
 	}
 	if choice.Action == "open" {
 		if !isSafeAppName(choice.Arg) {
 			return li.fallback.Interpret(text) // rechazo de seguridad → NO se registra
 		}
 		li.remember(text, choice.Say)
-		return wrap(openAppAction(choice.Arg), choice.Say), nil
+		return withMood(wrap(openAppAction(choice.Arg), choice.Say), choice.Mood), nil
 	}
 	if t, ok := li.argActions[choice.Action]; ok {
 		li.remember(text, choice.Say)
-		return wrap(t.Build(choice.Arg), choice.Say), nil
+		return withMood(wrap(t.Build(choice.Arg), choice.Say), choice.Mood), nil
 	}
 	if a, ok := li.actions[choice.Action]; ok {
 		li.remember(text, choice.Say)
-		return wrap(a, choice.Say), nil
+		return withMood(wrap(a, choice.Say), choice.Mood), nil
 	}
 	return li.fallback.Interpret(text) // acción desconocida → NO se registra
+}
+
+// moods mapea el `mood` del LLM a una expresión de la cara (solo emociones de charla; dormido/mareado
+// son estados aparte que no vienen por acá).
+var moods = map[string]Expression{
+	"feliz": Feliz, "triste": Triste, "curioso": Curioso, "pensativo": Pensativo,
+	"sorprendido": Sorprendido, "neutral": Neutral, "enojado": Enojado, "amor": Amor,
+}
+
+// withMood pone la cara según la emoción que eligió el LLM (reacción al tono de la charla). Mood vacío
+// o desconocido → deja la cara que ya traía la acción. Devuelve la misma acción para encadenar.
+func withMood(a *Action, mood string) *Action {
+	if e, ok := moods[strings.ToLower(strings.TrimSpace(mood))]; ok {
+		a.Face = e
+	}
+	return a
 }
 
 // systemPrompt arma el prompt: instrucciones + hechos recuperados (si hay) + menú (orden estable).
 func (li *LLMInterpreter) systemPrompt(facts []string) string {
 	var b strings.Builder
 	b.WriteString("Sos Astro, un asistente de escritorio con voz. El usuario te habla en español. ")
-	b.WriteString("Respondé SOLO un JSON: {\"action\":\"<opcional>\",\"arg\":\"<opcional>\",\"say\":\"<respuesta hablada>\"}. ")
+	b.WriteString("Respondé SOLO un JSON: {\"action\":\"<opcional>\",\"arg\":\"<opcional>\",\"say\":\"<respuesta hablada>\",\"mood\":\"<emoción>\"}. ")
 	b.WriteString("Si es un COMANDO, elegí un `action` del menú y un `say` corto de confirmación. ")
 	b.WriteString("Si es CHARLA o una pregunta, usá action:\"none\" y contestá en `say`. ")
 	b.WriteString("El `say` se lee EN VOZ ALTA: sé MUY BREVE — una sola frase corta, directa. " +
 		"NO agregues muletillas de cortesía (\"¿en qué más puedo ayudarte?\", \"¡claro!\"), NO repitas el pedido, " +
 		"NO expliques de más. Como habla una persona: corto. Natural y en español.\n")
+	b.WriteString("\"mood\" = tu emoción según el TONO de lo que dijo el usuario, UNA de: " +
+		"feliz, triste, enojado, amor, curioso, pensativo, sorprendido, neutral. Guía: te reta o algo salió mal → triste; " +
+		"te insulta o te trata mal → enojado; te felicita o algo lindo → feliz; te dice algo cariñoso → amor; " +
+		"te pregunta algo → curioso; dudás/procesás → pensativo; algo inesperado → sorprendido; " +
+		"comando normal o dato → neutral. Poné SIEMPRE un mood.\n")
 	if len(facts) > 0 {
 		b.WriteString("Esto es lo que sé del usuario (usalo si viene al caso):\n")
 		for _, f := range facts {

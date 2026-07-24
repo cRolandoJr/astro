@@ -12,7 +12,9 @@ const (
 	Dormido     Expression = "dormido"
 	Triste      Expression = "triste"
 	Mareado     Expression = "mareado"
+	Enojado     Expression = "enojado" // reacción a maltrato/insulto (mood del LLM)
+	Amor        Expression = "amor"    // reacción a algo cariñoso (mood del LLM)
 )
 
-// (parpadeo, bostezo, guino, amor, enojado también existen como PNG — se usan en fases
-//  con voz/estados; por eso hay 13 PNGs y 8 constantes en Fase A.)
+// (parpadeo, bostezo, guino también existen como PNG — para animación de idle/estados; por eso hay
+//  13 PNGs. Enojado/Amor se sumaron como constantes al hacer la cara reactiva por 'mood'.)
