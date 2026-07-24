@@ -51,6 +51,9 @@ export ASTRO_WAKE_CMD="rec -q -c 1 -r 16000 -b 16 -e signed-integer -t raw - 2>/
 # ASTRO_OWW_MODEL: vacío = "hey_jarvis". Para el test del loop usá alexa (export antes de ./run.sh);
 # luego apuntará al modelo "Astro" entrenado. ASTRO_OWW_THRESHOLD sube/baja la sensibilidad.
 # export ASTRO_OWW_THRESHOLD=0.5
+# Ventana de conversación: cuánto escucha tras cada respuesta SIN re-decir "alexa" antes de dormir.
+# 60s = charla relajada (podés pensar entre pedidos). Si no hablás, se duerme al llegar al tope.
+export ASTRO_CONVERSATION_SECS=60
 
 # Astro no tiene deps de C → compilar en Go puro (resolver netgo). Evita necesitar gcc, que no está
 # en el PATH mínimo del servicio systemd (interactivo andaba porque tu shell de login sí lo tiene).
