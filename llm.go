@@ -183,12 +183,19 @@ func httpChat(baseURL, apiKey, model string) chatFunc {
 			messages = append(messages, map[string]string{"role": "assistant", "content": ex.Assistant})
 		}
 		messages = append(messages, map[string]string{"role": "user", "content": user})
-		body, _ := json.Marshal(map[string]any{
+		reqBody := map[string]any{
 			"model":           model,
 			"temperature":     0,
 			"response_format": map[string]string{"type": "json_object"},
 			"messages":        messages,
-		})
+		}
+		// DeepSeek V4 viene en modo "thinking" por default (agrega latencia de razonamiento);
+		// para un asistente de voz queremos respuesta directa. Gateado al proveedor: solo se
+		// manda a DeepSeek (otros endpoints OpenAI-compat rechazarían el campo desconocido).
+		if strings.Contains(baseURL, "deepseek") {
+			reqBody["thinking"] = map[string]string{"type": "disabled"}
+		}
+		body, _ := json.Marshal(reqBody)
 		url := strings.TrimRight(baseURL, "/") + "/chat/completions"
 		req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 		if err != nil {

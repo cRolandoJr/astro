@@ -10,9 +10,11 @@ if [[ ! -f ./secrets.env ]]; then
 fi
 source ./secrets.env   # define ASTRO_LLM_KEY
 
-# LLM en la nube (Gemini free, endpoint OpenAI-compat)
-export ASTRO_LLM_URL=https://generativelanguage.googleapis.com/v1beta/openai
-export ASTRO_LLM_MODEL=gemini-flash-latest
+# Cerebro (chat) en DeepSeek pago (OpenAI-compat) — sin límite diario como el free de Gemini.
+# NOTA: embeddings (recordar) y visión (mirar) reusan ASTRO_LLM_URL → con DeepSeek se degradan
+# (DeepSeek no tiene esos endpoints); se restauran separando proveedores (Gemini) más adelante.
+export ASTRO_LLM_URL=https://api.deepseek.com
+export ASTRO_LLM_MODEL=deepseek-v4-flash
 export ASTRO_EMBED_MODEL=gemini-embedding-001
 
 # Cara (eww), STT (whisper)
