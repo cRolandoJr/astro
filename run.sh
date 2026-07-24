@@ -35,9 +35,9 @@ export ASTRO_VOICE_FX="gain -3 pitch 600"
 # ASTRO_OWW_MODEL vacío = "hey_jarvis" (pre-entrenado, para validar); luego apuntará al modelo "Astro".
 # Para volver al modo tecla: ASTRO_INPUT=hotkey (SUPER+SHIFT+A) sigue disponible.
 export ASTRO_INPUT=wake
-# `gain 10`: tu micro entra bajo (rms ~500) y openWakeWord necesita nivel de voz normal; +10 dB lo
-# lleva al rango sin (casi) clipear. Fix propio a futuro = subir el gain de la fuente con wpctl.
-export ASTRO_WAKE_CMD="rec -q -c 1 -r 16000 -b 16 -e signed-integer -t raw - gain 10 2>/dev/null | $HOME/.venvs/astro-wake-oww/bin/python $PWD/scripts/wake_oww.py"
+# Sin gain en el pipeline: el nivel se maneja a nivel de sistema (wpctl set-volume del micro ~1.5),
+# así el wake Y la captura de whisper reciben buen audio de una sola fuente de verdad.
+export ASTRO_WAKE_CMD="rec -q -c 1 -r 16000 -b 16 -e signed-integer -t raw - 2>/dev/null | $HOME/.venvs/astro-wake-oww/bin/python $PWD/scripts/wake_oww.py"
 # ASTRO_OWW_MODEL: vacío = "hey_jarvis". Para el test del loop usá alexa (export antes de ./run.sh);
 # luego apuntará al modelo "Astro" entrenado. ASTRO_OWW_THRESHOLD sube/baja la sensibilidad.
 # export ASTRO_OWW_THRESHOLD=0.5
