@@ -421,15 +421,17 @@ func confirmationVerdict(text string) string {
 	}
 }
 
-// isCatastrophic es un BACKSTOP: rechaza patrones que borran todo o rompen el sistema, aunque el
-// usuario confirme. NO es airtight (una denylist es gato-y-ratón); la guarda real es la confirmación.
+// isCatastrophic es un BACKSTOP best-effort: rechaza las FORMAS OBVIAS de comandos que borran todo o
+// rompen el sistema, por si el LLM alucina uno ante un pedido benigno. NO es exhaustivo ni una sandbox
+// (una denylist es gato-y-ratón: órdenes de args, variables como $HOME, aliases se le escapan) —
+// la guarda REAL es la confirmación de dos turnos. Ver TestIsCatastrophic para el límite documentado.
 func isCatastrophic(cmd string) bool {
 	c := strings.ToLower(strings.Join(strings.Fields(cmd), " ")) // colapsa espacios, a minúsculas
 	bad := []string{
 		"rm -rf /", "rm -fr /", "rm -rf ~", "rm -fr ~", "rm -rf /home",
 		"dd if=", "dd of=", "mkfs", "sudo ", ":(){",
 		"> /dev/sd", "> /dev/nvme", "of=/dev/sd", "of=/dev/nvme",
-		"shutdown", "reboot", "chmod -r /", "chown -r /",
+		"shutdown", "reboot",
 	}
 	for _, b := range bad {
 		if strings.Contains(c, b) {

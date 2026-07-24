@@ -58,13 +58,16 @@ Turno 2 (al TOPE de Interpret, ANTES del chat):
 
 - **Guarda primaria = confirmación.** Vos ves/oís el comando exacto y lo aprobás. Es lo único robusto para
   comandos arbitrarios (una denylist es gato-y-ratón: obfuscación, `$(...)`, encadenados).
-- **Backstop catastrófico** (rechazo directo, aunque confirmes): patrones que borran todo o rompen el sistema
-  — `rm -rf /`, `rm -rf ~`, `rm -rf /home`, `dd if=`/`dd of=`, `mkfs`, `sudo`, `:(){` (fork bomb),
-  `> /dev/sd`/`> /dev/nvme` y `of=/dev/sd`/`of=/dev/nvme` (este host es NVMe), `shutdown`, `reboot`,
-  `chmod -R /`, `chown -R /`. Se chequea sobre el comando en minúsculas con espacios colapsados. Los patrones
-  de `dd` llevan `if=`/`of=` a propósito: `dd ` a secas daría falso positivo con `git add .` (contiene `dd `).
-  **Honestidad: NO es airtight** (backstop contra alucinaciones obvias, no una sandbox); la confirmación
-  sigue siendo la guarda real.
+- **Backstop catastrófico** (rechazo directo, aunque confirmes): atrapa las **formas obvias** de comandos
+  que borran todo o rompen el sistema, por si el LLM alucina uno ante un pedido benigno — `rm -rf /`,
+  `rm -rf ~`, `rm -rf /home`, `dd if=`/`dd of=`, `mkfs`, `sudo`, `:(){` (fork bomb), `> /dev/sd`/`> /dev/nvme`
+  y `of=/dev/sd`/`of=/dev/nvme` (este host es NVMe), `shutdown`, `reboot`. Se chequea sobre el comando en
+  minúsculas con espacios colapsados. Los patrones de `dd` llevan `if=`/`of=` a propósito: `dd ` a secas daría
+  falso positivo con `git add .` (contiene `dd `). **Honestidad: NO es exhaustivo NI una sandbox.** Se le
+  escapan a propósito las variantes menos obvias — otro orden de args (`chmod -R 777 /`), variables
+  (`rm -rf $HOME`), otras herramientas (`find / -delete`); `TestIsCatastrophic` documenta esas brechas. La
+  guarda REAL es la confirmación de dos turnos: el usuario declaró que no piensa usar `ejecutar` para borrar,
+  así que el backstop no persigue cada forma destructiva — solo frena la alucinación catastrófica evidente.
 - **Gate `ASTRO_EXEC`:** apagado por default (la capacidad más peligrosa no se prende sola); `run.sh` la
   prende (`ASTRO_EXEC=1`). Con ella apagada, `ejecutar` cae a fallback (como si no existiera).
 - **Caveat honesto asentado:** confirmar por voz un comando largo que no parseaste bien es un riesgo residual
