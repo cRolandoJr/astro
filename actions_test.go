@@ -57,3 +57,104 @@ func TestAccionesTienenDescripcion(t *testing.T) {
 		}
 	}
 }
+
+func TestQueSuenaDiceLaCancion(t *testing.T) {
+	acts := buildActions(time.Now)
+	fake := &fakeRunner{output: "Nate Gentile - Mi PC Linux"}
+	reply, err := acts["que_suena"].Run(fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "Está sonando: Nate Gentile - Mi PC Linux." {
+		t.Fatalf("fue %q", reply)
+	}
+	if got := fake.lastCall(); got[0] != "playerctl" || got[1] != "metadata" {
+		t.Fatalf("esperaba playerctl metadata, fue %v", got)
+	}
+}
+
+func TestBateriaParseaPorcentaje(t *testing.T) {
+	acts := buildActions(time.Now)
+	// upower -e → device; upower -i <dev> → info con "percentage:"
+	fake := &fakeRunner{output: "/org/freedesktop/UPower/devices/battery_BAT0\n    percentage:          87%\n"}
+	reply, err := acts["bateria"].Run(fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "Batería al 87%." {
+		t.Fatalf("fue %q", reply)
+	}
+	// N1: ata que la 1ª llamada enumera y la 2ª pide info del device encontrado
+	if len(fake.calls) != 2 || !reflect.DeepEqual(fake.calls[0], []string{"upower", "-e"}) {
+		t.Fatalf("esperaba upower -e primero, fue %v", fake.calls)
+	}
+	if len(fake.calls[1]) < 3 || !strings.Contains(fake.calls[1][2], "battery_BAT0") {
+		t.Fatalf("esperaba upower -i <dev battery>, fue %v", fake.calls[1])
+	}
+}
+
+func TestFechaEnEspanol(t *testing.T) {
+	fija := func() time.Time { return time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC) } // viernes 24 de julio
+	acts := buildActions(fija)
+	reply, _ := acts["fecha"].Run(&fakeRunner{})
+	if reply != "Hoy es viernes 24 de julio." {
+		t.Fatalf("fue %q", reply)
+	}
+}
+
+func TestClimaVacioAmable(t *testing.T) {
+	acts := buildActions(time.Now)
+	reply, err := acts["clima"].Run(&fakeRunner{output: ""})
+	if err != nil || reply != "No pude ver el clima." {
+		t.Fatalf("reply=%q err=%v", reply, err)
+	}
+}
+
+func TestAgendaPrimerEventoNoVacio(t *testing.T) {
+	acts := buildActions(time.Now)
+	// khal puede meter una línea vacía/encabezado; tomamos la 1ª NO vacía
+	fake := &fakeRunner{output: "\n10:00 Reunión con el equipo\n12:00 Almuerzo\n"}
+	reply, _ := acts["agenda"].Run(fake)
+	if reply != "Próximo: 10:00 Reunión con el equipo." {
+		t.Fatalf("fue %q", reply)
+	}
+}
+
+func TestArgBrilloSubir(t *testing.T) {
+	fake := &fakeRunner{}
+	if _, err := buildArgActions()["brillo"].Build("subir").Run(fake); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"brightnessctl", "set", "+10%"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v, fue %v", want, got)
+	}
+}
+
+func TestArgAbrirUrlAgregaHttps(t *testing.T) {
+	fake := &fakeRunner{}
+	if _, err := buildArgActions()["abrir_url"].Build("youtube.com").Run(fake); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"xdg-open", "https://youtube.com"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v, fue %v", want, got)
+	}
+}
+
+func TestArgBuscarUrlEncode(t *testing.T) {
+	fake := &fakeRunner{}
+	if _, err := buildArgActions()["buscar"].Build("gatos monos").Run(fake); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"xdg-open", "https://duckduckgo.com/?q=gatos+monos"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v, fue %v", want, got)
+	}
+}
+
+func TestArgWorkspaceInvalido(t *testing.T) {
+	if _, err := buildArgActions()["ir_a_workspace"].Build("catorce").Run(&fakeRunner{}); err == nil {
+		t.Fatal("workspace no numérico debía dar error")
+	}
+}

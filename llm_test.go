@@ -38,6 +38,41 @@ func newLLMWithMem(chat chatFunc, mem MemoryStore) *LLMInterpreter {
 	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts), Mem: mem})
 }
 
+func newLLMArg(chat chatFunc) *LLMInterpreter {
+	acts := buildActions(time.Now)
+	return NewLLMInterpreter(LLMConfig{Chat: chat, Actions: acts, Fallback: NewRuleInterpreter(acts),
+		ArgActions: buildArgActions()})
+}
+
+func TestLLMArgToolVolumen(t *testing.T) {
+	fake := &fakeRunner{}
+	a, err := newLLMArg(fakeChat(`{"action":"volumen_a","arg":"30","say":"Dale, al 30."}`, nil)).Interpret("poné el volumen en 30")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	reply, err := a.Run(fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != "Dale, al 30." {
+		t.Fatalf("esperaba el say, fue %q", reply)
+	}
+	want := []string{"wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "30%"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v, fue %v", want, got)
+	}
+}
+
+func TestLLMArgToolVolumenInvalido(t *testing.T) {
+	a, err := newLLMArg(fakeChat(`{"action":"volumen_a","arg":"altísimo","say":"ok"}`, nil)).Interpret("subilo a full")
+	if err != nil || a == nil {
+		t.Fatalf("a=%v err=%v", a, err)
+	}
+	if _, err := a.Run(&fakeRunner{}); err == nil {
+		t.Fatal("un arg no numérico debía dar error al ejecutar")
+	}
+}
+
 func TestLLMRecordarGuardaElHecho(t *testing.T) {
 	mem := &fakeMemory{}
 	a, err := newLLMWithMem(fakeChat(`{"action":"recordar","arg":"uso NixOS","say":"Dale, anotado."}`, nil), mem).

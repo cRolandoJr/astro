@@ -23,6 +23,7 @@ type chatFunc func(system string, history []Exchange, user string) (string, erro
 type LLMInterpreter struct {
 	chat         chatFunc
 	actions      map[string]*Action
+	argActions   map[string]*ArgTool
 	fallback     Interpreter
 	mem          MemoryStore // opcional (nil = sin memoria persistente)
 	topK         int
@@ -39,6 +40,7 @@ type LLMInterpreter struct {
 type LLMConfig struct {
 	Chat         chatFunc
 	Actions      map[string]*Action
+	ArgActions   map[string]*ArgTool // tools con arg (nil = ninguna)
 	Fallback     Interpreter
 	Mem          MemoryStore      // opcional (nil = sin memoria persistente)
 	TopK         int              // <=0 → 5
@@ -63,7 +65,7 @@ func NewLLMInterpreter(cfg LLMConfig) *LLMInterpreter {
 		cfg.IdleWindow = 5 * time.Minute
 	}
 	return &LLMInterpreter{
-		chat: cfg.Chat, actions: cfg.Actions, fallback: cfg.Fallback, mem: cfg.Mem,
+		chat: cfg.Chat, actions: cfg.Actions, argActions: cfg.ArgActions, fallback: cfg.Fallback, mem: cfg.Mem,
 		topK: cfg.TopK, now: cfg.Now, historyTurns: cfg.HistoryTurns, idleWindow: cfg.IdleWindow,
 		vision: cfg.Vision, monitors: cfg.Monitors,
 	}
@@ -120,6 +122,10 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 		li.remember(text, choice.Say)
 		return wrap(openAppAction(choice.Arg), choice.Say), nil
 	}
+	if t, ok := li.argActions[choice.Action]; ok {
+		li.remember(text, choice.Say)
+		return wrap(t.Build(choice.Arg), choice.Say), nil
+	}
 	if a, ok := li.actions[choice.Action]; ok {
 		li.remember(text, choice.Say)
 		return wrap(a, choice.Say), nil
@@ -159,6 +165,14 @@ func (li *LLMInterpreter) systemPrompt(facts []string) string {
 		if li.monitors != "" {
 			b.WriteString("Monitores (elegí el name; x menor = más a la izquierda; si no aclarás, el enfocado): " + li.monitors + "\n")
 		}
+	}
+	argNames := make([]string, 0, len(li.argActions))
+	for n := range li.argActions {
+		argNames = append(argNames, n)
+	}
+	sort.Strings(argNames)
+	for _, n := range argNames {
+		fmt.Fprintf(&b, "- %s: %s\n", n, li.argActions[n].Desc)
 	}
 	return b.String()
 }
