@@ -140,7 +140,9 @@ func (li *LLMInterpreter) systemPrompt(facts []string) string {
 	b.WriteString("Respondé SOLO un JSON: {\"action\":\"<opcional>\",\"arg\":\"<opcional>\",\"say\":\"<respuesta hablada>\"}. ")
 	b.WriteString("Si es un COMANDO, elegí un `action` del menú y un `say` corto de confirmación. ")
 	b.WriteString("Si es CHARLA o una pregunta, usá action:\"none\" y contestá en `say`. ")
-	b.WriteString("El `say` se lee en voz alta: que sea BREVE (1-2 frases), natural y en español.\n")
+	b.WriteString("El `say` se lee EN VOZ ALTA: sé MUY BREVE — una sola frase corta, directa. " +
+		"NO agregues muletillas de cortesía (\"¿en qué más puedo ayudarte?\", \"¡claro!\"), NO repitas el pedido, " +
+		"NO expliques de más. Como habla una persona: corto. Natural y en español.\n")
 	if len(facts) > 0 {
 		b.WriteString("Esto es lo que sé del usuario (usalo si viene al caso):\n")
 		for _, f := range facts {
