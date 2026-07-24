@@ -47,11 +47,12 @@ func main() {
 	// Entrada: voz por default, stdin si ASTRO_INPUT=stdin (para debug), wake-word si ASTRO_INPUT=wake.
 	var input InputSource
 	var wake *WakeWordInput
+	var hotkey *HotkeyInput
 	switch os.Getenv("ASTRO_INPUT") {
 	case "stdin":
 		input = NewStdinInput()
 	case "wake":
-		w, err := NewWakeWordInput(os.Getenv("ASTRO_WAKE_CMD"), newVoice(runner))
+		w, err := NewWakeWordInput(os.Getenv("ASTRO_WAKE_CMD"), newVoice(runner, face))
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "modo wake:", err)
 			return
@@ -59,8 +60,17 @@ func main() {
 		wake = w
 		defer wake.Close()
 		input = wake
+	case "hotkey":
+		h, err := NewHotkeyInput(envOr("ASTRO_TRIGGER_FIFO", "/tmp/astro-trigger.fifo"), newVoice(runner, face))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "modo hotkey:", err)
+			return
+		}
+		hotkey = h
+		defer hotkey.Close()
+		input = hotkey
 	default:
-		input = newVoice(runner)
+		input = newVoice(runner, face)
 	}
 
 	// Chirps tipo Wall-E (sox synth). Se apagan con ASTRO_CHIRPS=0; cada sonido se puede
@@ -89,6 +99,9 @@ func main() {
 		_ = face.Close()
 		if wake != nil {
 			_ = wake.Close()
+		}
+		if hotkey != nil {
+			_ = hotkey.Close()
 		}
 		os.Exit(0)
 	}()
@@ -155,12 +168,13 @@ func envOr(key, def string) string {
 }
 
 // newVoice arma la entrada por voz (grabación por silencio + whisper) desde el entorno.
-func newVoice(runner Runner) *VoiceInput {
+func newVoice(runner Runner, face Display) *VoiceInput {
 	secs, _ := strconv.Atoi(os.Getenv("ASTRO_REC_SECONDS"))
 	vi := NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cli"),
 		os.Getenv("ASTRO_WHISPER_MODEL"), secs)
 	vi.SilencePct = os.Getenv("ASTRO_REC_SILENCE_PCT")
 	vi.TrailSec = os.Getenv("ASTRO_REC_TRAIL_SEC")
+	vi.Face = face // muestra "escuchando" al grabar
 	return vi
 }
 

@@ -27,5 +27,8 @@ export ASTRO_PIPER_BIN="$PWD/scripts/kokoro-say"
 export ASTRO_PIPER_VOICE="ef_dora"
 export ASTRO_VOICE_FX="gain -3 pitch 600"
 
+# Activación por voz sin Enter: apretás SUPER+SHIFT+A (bind de Hyprland) y Astro escucha una vez.
+export ASTRO_INPUT=hotkey
+
 exec nix shell nixpkgs#whisper-cpp nixpkgs#piper-tts nixpkgs#alsa-utils nixpkgs#sox nixpkgs#grim nixpkgs#go \
   --command go run .

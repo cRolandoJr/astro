@@ -57,3 +57,25 @@ func TestVoiceCaptureErrorSiRecFalla(t *testing.T) {
 		t.Fatal("esperaba error si rec falla")
 	}
 }
+
+type fakeDisplay struct{ shown []Expression }
+
+func (f *fakeDisplay) Show(e Expression) error {
+	f.shown = append(f.shown, e)
+	return nil
+}
+
+func TestVoiceCaptureMuestraCaraEscuchando(t *testing.T) {
+	disp := &fakeDisplay{}
+	v := VoiceInput{
+		Runner: &fakeRunner{}, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
+		WavPath: "/tmp/astro-in.wav", MaxSeconds: 30, Face: disp,
+		ReadFile: func(string) ([]byte, error) { return []byte("hola"), nil },
+	}
+	if _, err := v.capture(); err != nil {
+		t.Fatalf("capture: %v", err)
+	}
+	if len(disp.shown) == 0 || disp.shown[0] != Curioso {
+		t.Fatalf("esperaba mostrar la cara 'Curioso' al empezar a escuchar, fue %v", disp.shown)
+	}
+}
