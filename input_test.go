@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func TestIsRealUtterance(t *testing.T) {
+	real := []string{"qué hora es", "poné pausa", "sí", "no", "abrí firefox", "reproducí música"}
+	junk := []string{"", "   ", ".", "...", "Gracias.", "gracias", "Adiós", "muchas gracias",
+		"Subtítulos", "[BLANK_AUDIO]", "[silencio]"}
+	for _, s := range real {
+		if !isRealUtterance(s) {
+			t.Errorf("isRealUtterance(%q) = false, quiero true", s)
+		}
+	}
+	for _, s := range junk {
+		if isRealUtterance(s) {
+			t.Errorf("isRealUtterance(%q) = true, quiero false (vacío/ruido/alucinación)", s)
+		}
+	}
+}
+
 func TestCleanTranscript(t *testing.T) {
 	cases := map[string]string{
 		"  Hola Astro.\n":    "Hola Astro.",

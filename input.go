@@ -64,9 +64,12 @@ func (v *VoiceInput) Listen() (string, error) {
 	return v.capture()
 }
 
-// capture graba y transcribe. Es la parte testeable (sin el Enter interactivo).
-func (v *VoiceInput) capture() (string, error) {
-	maxSecs := v.MaxSeconds
+// capture graba y transcribe con el tope normal (v.MaxSeconds). Es la parte testeable.
+func (v *VoiceInput) capture() (string, error) { return v.captureMax(v.MaxSeconds) }
+
+// captureMax es capture con un tope de grabación explícito (seg; <=0 → 30). Lo usa la ventana de
+// conversación con un tope corto para volver a dormir rápido si no hablás.
+func (v *VoiceInput) captureMax(maxSecs int) (string, error) {
 	if maxSecs <= 0 {
 		maxSecs = 30
 	}
@@ -107,6 +110,24 @@ func (v *VoiceInput) capture() (string, error) {
 	text := cleanTranscript(string(raw))
 	fmt.Printf("🗣️  entendí: %q\n", text) // feedback: qué transcribió Whisper (debug + UX)
 	return text, nil
+}
+
+// isRealUtterance decide si una transcripción es habla real y no vacío/ruido/alucinación. Whisper
+// sobre silencio devuelve "" o inventa muletillas ("Gracias", "Adiós", "Subtítulos…"); esto evita
+// mandar basura al LLM y mantener abierta la conversación por ruido. Reusa normalize (interpreter.go).
+func isRealUtterance(text string) bool {
+	t := normalize(text) // minúsculas, sin acentos, sin puntuación de cola
+	if t == "" {
+		return false
+	}
+	if strings.Contains(t, "blank_audio") || strings.Contains(t, "silenc") {
+		return false // marcadores de no-habla de whisper (ej "[BLANK_AUDIO]", "[silencio]")
+	}
+	junk := map[string]bool{
+		"gracias": true, "adios": true, "muchas gracias": true, "subtitulos": true,
+		"gracias por ver": true, "gracias por ver el video": true,
+	}
+	return !junk[t]
 }
 
 // cleanTranscript limpia la salida de whisper: saca marcadores entre corchetes
