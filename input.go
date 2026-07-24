@@ -41,6 +41,7 @@ type VoiceInput struct {
 	TrailSec     string                       // silencio de cola antes de cortar (ej "1.5"); vacío → default
 	WavPath      string                       // ej. /tmp/astro-in.wav
 	ReadFile     func(string) ([]byte, error) // default os.ReadFile; inyectable en tests
+	Face         Display                      // opcional: muestra "escuchando" al grabar (nil = sin cara)
 	trigger      *bufio.Scanner
 }
 
@@ -76,6 +77,9 @@ func (v *VoiceInput) capture() (string, error) {
 	trail := v.TrailSec
 	if trail == "" {
 		trail = "1.5"
+	}
+	if v.Face != nil {
+		_ = v.Face.Show(Curioso) // cara de "te escucho" mientras grabás
 	}
 	fmt.Println("🎙️  hablá… (corta sola al callarte)")
 	// rec (sox) graba hasta el silencio de cola; 'timeout' es el tope duro si el umbral nunca
