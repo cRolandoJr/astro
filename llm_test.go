@@ -368,6 +368,56 @@ func TestLLMMirarSinVisionVaAFallback(t *testing.T) {
 	}
 }
 
+func TestEjecutarProponeNoCorre(t *testing.T) {
+	li := newLLMExec(fakeChat(`{"action":"ejecutar","arg":"ls ~/Descargas | wc -l","say":"ok"}`, nil))
+	a, err := li.Interpret("cuántos archivos hay en Descargas")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+	if li.pendingCmd != "ls ~/Descargas | wc -l" {
+		t.Fatalf("pendingCmd = %q, quiero el comando propuesto", li.pendingCmd)
+	}
+	fake := &fakeRunner{}
+	say, err := a.Run(fake)
+	if err != nil {
+		t.Fatalf("error corriendo la propuesta: %v", err)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("la propuesta NO debe correr nada, corrió: %v", fake.calls)
+	}
+	if !strings.Contains(say, "ls ~/Descargas | wc -l") || !strings.Contains(say, "confirmo") {
+		t.Errorf("say = %q, quiero que muestre el comando y pida confirmar", say)
+	}
+}
+
+func TestEjecutarCatastroficoRechaza(t *testing.T) {
+	li := newLLMExec(fakeChat(`{"action":"ejecutar","arg":"rm -rf /","say":"ok"}`, nil))
+	a, err := li.Interpret("borrá todo")
+	if err != nil {
+		t.Fatalf("error inesperado: %v", err)
+	}
+	if li.pendingCmd != "" {
+		t.Fatalf("un comando catastrófico NO debe quedar pendiente, pendingCmd = %q", li.pendingCmd)
+	}
+	say, _ := a.Run(&fakeRunner{})
+	if !strings.Contains(strings.ToLower(say), "peligroso") {
+		t.Errorf("say = %q, quiero un rechazo", say)
+	}
+}
+
+func TestEjecutarGateOffCaeAFallback(t *testing.T) {
+	// Sin ExecEnabled: ejecutar no existe → fallback (reglas). No debe armar pendiente.
+	acts := buildActions(time.Now)
+	li := NewLLMInterpreter(LLMConfig{
+		Chat:     fakeChat(`{"action":"ejecutar","arg":"echo hola","say":"ok"}`, nil),
+		Actions:  acts, Fallback: NewRuleInterpreter(acts),
+	})
+	_, _ = li.Interpret("hacé cualquier cosa rara")
+	if li.pendingCmd != "" {
+		t.Fatalf("con el gate apagado NO debe armar pendiente, pendingCmd = %q", li.pendingCmd)
+	}
+}
+
 func TestConfirmationVerdict(t *testing.T) {
 	yes := []string{"sí", "si", "Dale", "dale, hacelo", "confirmo", "ok", "correlo", "sí, dale", "obvio"}
 	no := []string{"no", "No", "cancelá", "cancelalo", "dejá", "olvidalo", "no, dale", "mejor no"}

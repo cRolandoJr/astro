@@ -126,6 +126,17 @@ func (li *LLMInterpreter) Interpret(text string) (*Action, error) {
 		li.remember(text, choice.Say)
 		return wrap(openAppAction(choice.Arg), choice.Say), nil
 	}
+	if choice.Action == "ejecutar" {
+		if !li.execEnabled || choice.Arg == "" {
+			return li.fallback.Interpret(text) // ejecutor apagado o sin comando → como si no existiera
+		}
+		if isCatastrophic(choice.Arg) {
+			return sayAction("Eso no lo hago, es demasiado peligroso."), nil // rechazo directo, sin pendiente
+		}
+		// Propuesta: guardamos el comando y pedimos confirmar. NO se corre ni se registra en historial.
+		li.pendingCmd = choice.Arg
+		return sayAction("Voy a correr: " + choice.Arg + ". ¿Lo confirmo?"), nil
+	}
 	if t, ok := li.argActions[choice.Action]; ok {
 		li.remember(text, choice.Say)
 		return wrap(t.Build(choice.Arg), choice.Say), nil
@@ -280,6 +291,42 @@ func memoryWriteAction(mem MemoryStore, text string) *Action {
 			}
 			return "", nil
 		}}
+}
+
+// execAction corre un comando de shell YA CONFIRMADO por el usuario. Es el único punto del sistema
+// con shell arbitrario, y solo se llega acá tras la confirmación de dos turnos. Va envuelto en
+// `timeout 60`: como el daemon es un solo goroutine, un comando colgado (sleep, algo que lee stdin)
+// lo congelaría entero (mismo criterio que el curl de `clima`). En fallo HABLA el error con err=nil,
+// porque main.go a los errores de Run los imprime en pantalla (Println), no los dice por voz.
+func execAction(cmd string) *Action {
+	return &Action{Name: "ejecutar", Face: Neutral,
+		Run: func(r Runner) (string, error) {
+			out, err := r.Run("timeout", "60", "sh", "-c", cmd)
+			out = strings.TrimSpace(out)
+			if err != nil {
+				if out == "" {
+					return "El comando falló.", nil
+				}
+				return "Falló: " + clip(out, 140), nil
+			}
+			switch {
+			case out == "":
+				return "Listo.", nil
+			case len(out) > 200:
+				return "Listo, pero la salida es muy larga para leértela.", nil
+			default:
+				return out, nil
+			}
+		}}
+}
+
+// clip recorta a lo sumo n runas (sin partir un carácter UTF-8), para no leer paredes de texto.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }
 
 // lookAction captura un monitor con grim y le pregunta a la visión sobre la imagen.
