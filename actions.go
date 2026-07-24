@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -169,6 +170,66 @@ func buildArgActions() map[string]*ArgTool {
 					return "", fmt.Errorf("no pude cambiar el volumen: %w", err)
 				}
 				return "Volumen al " + strconv.Itoa(n) + " por ciento.", nil
+			}}
+		}},
+		"brillo": {Desc: "ajustar el brillo (arg = subir, bajar, o un número 0-100)", Build: func(arg string) *Action {
+			return &Action{Name: "brillo", Face: Neutral, Run: func(r Runner) (string, error) {
+				var val string
+				switch strings.TrimSpace(arg) {
+				case "subir":
+					val = "+10%"
+				case "bajar":
+					val = "10%-"
+				default:
+					n, err := strconv.Atoi(strings.TrimSpace(arg))
+					if err != nil || n < 0 || n > 100 {
+						return "", fmt.Errorf("brillo inválido: %q", arg)
+					}
+					val = strconv.Itoa(n) + "%"
+				}
+				if _, err := r.Run("brightnessctl", "set", val); err != nil {
+					return "", fmt.Errorf("no pude cambiar el brillo: %w", err)
+				}
+				return "Brillo ajustado.", nil
+			}}
+		}},
+		"abrir_url": {Desc: "abrir una URL en el navegador (arg = la url)", Build: func(arg string) *Action {
+			return &Action{Name: "abrir_url", Face: Curioso, Run: func(r Runner) (string, error) {
+				u := strings.TrimSpace(arg)
+				if u == "" {
+					return "", fmt.Errorf("no dijiste qué URL")
+				}
+				if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+					u = "https://" + u
+				}
+				if _, err := r.Run("xdg-open", u); err != nil {
+					return "", fmt.Errorf("no pude abrir la URL: %w", err)
+				}
+				return "Abriendo la página.", nil
+			}}
+		}},
+		"buscar": {Desc: "buscar algo en el navegador (arg = qué buscar)", Build: func(arg string) *Action {
+			return &Action{Name: "buscar", Face: Curioso, Run: func(r Runner) (string, error) {
+				q := strings.TrimSpace(arg)
+				if q == "" {
+					return "", fmt.Errorf("no dijiste qué buscar")
+				}
+				if _, err := r.Run("xdg-open", "https://duckduckgo.com/?q="+url.QueryEscape(q)); err != nil {
+					return "", fmt.Errorf("no pude buscar: %w", err)
+				}
+				return "Buscando " + q + ".", nil
+			}}
+		}},
+		"ir_a_workspace": {Desc: "cambiar de escritorio/workspace (arg = número 1-10)", Build: func(arg string) *Action {
+			return &Action{Name: "ir_a_workspace", Face: Neutral, Run: func(r Runner) (string, error) {
+				n, err := strconv.Atoi(strings.TrimSpace(arg))
+				if err != nil || n < 1 || n > 10 {
+					return "", fmt.Errorf("workspace inválido: %q", arg)
+				}
+				if _, err := r.Run("hyprctl", "dispatch", "workspace", strconv.Itoa(n)); err != nil {
+					return "", fmt.Errorf("no pude cambiar de workspace: %w", err)
+				}
+				return "Workspace " + strconv.Itoa(n) + ".", nil
 			}}
 		}},
 	}

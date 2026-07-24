@@ -119,3 +119,42 @@ func TestAgendaPrimerEventoNoVacio(t *testing.T) {
 		t.Fatalf("fue %q", reply)
 	}
 }
+
+func TestArgBrilloSubir(t *testing.T) {
+	fake := &fakeRunner{}
+	if _, err := buildArgActions()["brillo"].Build("subir").Run(fake); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"brightnessctl", "set", "+10%"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v, fue %v", want, got)
+	}
+}
+
+func TestArgAbrirUrlAgregaHttps(t *testing.T) {
+	fake := &fakeRunner{}
+	if _, err := buildArgActions()["abrir_url"].Build("youtube.com").Run(fake); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"xdg-open", "https://youtube.com"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v, fue %v", want, got)
+	}
+}
+
+func TestArgBuscarUrlEncode(t *testing.T) {
+	fake := &fakeRunner{}
+	if _, err := buildArgActions()["buscar"].Build("gatos monos").Run(fake); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"xdg-open", "https://duckduckgo.com/?q=gatos+monos"}
+	if got := fake.lastCall(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("esperaba %v, fue %v", want, got)
+	}
+}
+
+func TestArgWorkspaceInvalido(t *testing.T) {
+	if _, err := buildArgActions()["ir_a_workspace"].Build("catorce").Run(&fakeRunner{}); err == nil {
+		t.Fatal("workspace no numérico debía dar error")
+	}
+}
