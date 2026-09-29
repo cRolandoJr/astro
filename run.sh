@@ -25,12 +25,9 @@ export ASTRO_WHISPER_MODEL="$HOME/modelos/ggml-small.bin"
 # supresión de ruido + pasa-altos), declarada en nix-config/modules/audio.nix. Limpia el audio para
 # whisper y el wake. El NIVEL se da subiendo el micro real (~2.5, wpctl) para que la voz sobreviva al NS.
 export PULSE_SOURCE=astro_echo_cancel_source
-# VAD de captura (corta sola al callarte). Con el micro boosteado el ambiente sube, así que:
-#  - SILENCE_PCT (umbral): 6% → el ruido de fondo cuenta como "silencio" y corta (default 3% se quedaba grabando).
-#  - TRAIL: 0.8s de silencio antes de cortar → responde ágil. Si te corta al hacer una pausa, subí TRAIL;
-#    si sigue grabando de más por ruido, subí SILENCE_PCT.
-export ASTRO_REC_SILENCE_PCT=6%
-export ASTRO_REC_TRAIL_SEC=0.8
+# VAD Adaptativo en Go: ya no usamos sox silence. El piso de ruido se auto-ajusta.
+# TRAIL: segundos de silencio antes de cortar. Con 2.0s puedes pausar al hablar sin que te corte.
+export ASTRO_REC_TRAIL_SEC=2.0
 
 # Voz: Kokoro (neural, español) vía wrapper compat-piper. El FX +600 le da el timbre agudito.
 # LD_LIBRARY_PATH = libstdc++ (gcc) + zlib: los wheels de pip de Kokoro y de openWakeWord

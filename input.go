@@ -2,11 +2,9 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -40,19 +38,24 @@ type VoiceInput struct {
 	WhisperBin   string
 	WhisperModel string
 	MaxSeconds   int                          // tope duro de grabación (seg); el silence corta antes en uso normal
-	SilencePct   string                       // umbral de silencio (ej "3%"); vacío → default
 	TrailSec     string                       // silencio de cola antes de cortar (ej "1.5"); vacío → default
 	WavPath      string                       // ej. /tmp/astro-in.wav
 	ReadFile     func(string) ([]byte, error) // default os.ReadFile; inyectable en tests
+	RecordVAD    func(wavPath string, maxSecs int, trailSec float64) error // inyectable en tests
 	Face         Display                      // opcional: muestra "escuchando" al grabar (nil = sin cara)
 	trigger      *bufio.Scanner
 }
 
 func NewVoiceInput(r Runner, whisperBin, whisperModel string, maxSeconds int) *VoiceInput {
 	return &VoiceInput{
-		Runner: r, WhisperBin: whisperBin, WhisperModel: whisperModel,
-		MaxSeconds: maxSeconds, WavPath: "/tmp/astro-in.wav",
-		trigger: bufio.NewScanner(os.Stdin),
+		Runner:       r,
+		WhisperBin:   whisperBin,
+		WhisperModel: whisperModel,
+		MaxSeconds:   maxSeconds,
+		WavPath:      "/tmp/astro-in.wav",
+		ReadFile:     os.ReadFile,
+		RecordVAD:    captureAdaptiveVAD,
+		trigger:      bufio.NewScanner(os.Stdin),
 	}
 }
 
@@ -76,37 +79,33 @@ func (v *VoiceInput) captureMax(maxSecs int) (string, error) {
 	if maxSecs <= 0 {
 		maxSecs = 30
 	}
-	thresh := v.SilencePct
-	if thresh == "" {
-		thresh = "3%"
+	trailStr := v.TrailSec
+	if trailStr == "" {
+		trailStr = "1.5"
 	}
-	trail := v.TrailSec
-	if trail == "" {
-		trail = "1.5"
+	threshSecs := 1.5
+	if v, err := strconv.ParseFloat(trailStr, 64); err == nil {
+		threshSecs = v
 	}
+
 	if v.Face != nil {
 		_ = v.Face.Open()        // idle = cara oculta; aparece al empezar a escuchar
 		_ = v.Face.Show(Curioso) // cara de "te escucho" mientras grabás
 	}
 	fmt.Println("🎙️  hablá… (corta sola al callarte)")
 	timing := os.Getenv("ASTRO_TIMING") == "1"
-	// rec (sox) graba hasta el silencio de cola; 'timeout' es el tope duro si el umbral nunca
-	// detecta silencio. rec sale 0 al cortar por silencio.
+	
 	tRec := time.Now()
-	_, recErr := v.Runner.Run("timeout", strconv.Itoa(maxSecs),
-		"rec", "-q", "-c", "1", "-r", "16000", v.WavPath,
-		"silence", "1", "0.1", thresh, "1", trail, thresh)
+	recErr := v.RecordVAD(v.WavPath, maxSecs, threshSecs)
+	
 	if timing {
 		fmt.Fprintf(os.Stderr, "⏱ rec(grabación+VAD): %v\n", time.Since(tRec).Round(time.Millisecond))
 	}
 	if recErr != nil {
-		// 'timeout' devuelve 124 al cortar por el tope: en la ventana de conversación = no hablaste,
-		// o ruido constante que nunca dispara el silencio. NO es fatal → captura vacía (el llamador
-		// decide dormir / "no te escuché"). Cualquier otro error de rec sí es real.
-		if isTimeout(recErr) {
+		if recErr.Error() == "timeout" {
 			return "", nil
 		}
-		return "", fmt.Errorf("no pude grabar (¿sox/rec + timeout/coreutils + PipeWire?): %w", recErr)
+		return "", fmt.Errorf("no pude grabar (Adaptive VAD): %w", recErr)
 	}
 	// whisper escribe la transcripción a <of>.txt (-nt: sin timestamps).
 	ofPrefix := strings.TrimSuffix(v.WavPath, ".wav")
@@ -131,12 +130,7 @@ func (v *VoiceInput) captureMax(maxSecs int) (string, error) {
 	return text, nil
 }
 
-// isTimeout indica si el error viene de `timeout` cortando por el tope (exit 124) — esperado (fin de
-// ventana sin voz / ruido constante), NO una falla real de grabación.
-func isTimeout(err error) bool {
-	var ee *exec.ExitError
-	return errors.As(err, &ee) && ee.ExitCode() == 124
-}
+
 
 // isRealUtterance decide si una transcripción es habla real y no vacío/ruido/alucinación. Whisper
 // sobre silencio devuelve "" o inventa muletillas ("Gracias", "Adiós", "Subtítulos…"); esto evita

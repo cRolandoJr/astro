@@ -180,7 +180,7 @@ func newVoice(runner Runner, face Display) *VoiceInput {
 	secs, _ := strconv.Atoi(os.Getenv("ASTRO_REC_SECONDS"))
 	vi := NewVoiceInput(runner, envOr("ASTRO_WHISPER_BIN", "whisper-cli"),
 		os.Getenv("ASTRO_WHISPER_MODEL"), secs)
-	vi.SilencePct = os.Getenv("ASTRO_REC_SILENCE_PCT")
+
 	vi.TrailSec = os.Getenv("ASTRO_REC_TRAIL_SEC")
 	vi.Face = face // muestra "escuchando" al grabar
 	return vi

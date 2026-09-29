@@ -11,7 +11,8 @@ func TestWakeWordListenDisparaCapturaTrasEvento(t *testing.T) {
 	voice := &VoiceInput{
 		Runner: fake, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
 		WavPath: "/tmp/astro-in.wav", MaxSeconds: 30,
-		ReadFile: func(string) ([]byte, error) { return []byte("qué hora es"), nil },
+		ReadFile:  func(string) ([]byte, error) { return []byte("qué hora es"), nil },
+		RecordVAD: func(string, int, float64) error { return nil },
 	}
 	w := &WakeWordInput{events: bufio.NewScanner(strings.NewReader("DETECTED\n")), voice: voice}
 	got, err := w.Listen()
@@ -21,9 +22,9 @@ func TestWakeWordListenDisparaCapturaTrasEvento(t *testing.T) {
 	if got != "qué hora es" {
 		t.Fatalf("esperaba el comando capturado tras el wake, fue %q", got)
 	}
-	// tras el wake, se grabó (rec) y transcribió (whisper) — el primer comando es la captura
-	if len(fake.calls) < 1 || fake.calls[0][0] != "timeout" || fake.calls[0][2] != "rec" {
-		t.Fatalf("esperaba captura (timeout rec …) tras el wake, fue %v", fake.calls)
+	// tras el wake, se grabó (via exec directo) y transcribió (whisper via runner) — el primer comando es whisper
+	if len(fake.calls) < 1 || fake.calls[0][0] != "whisper-cli" {
+		t.Fatalf("esperaba whisper-cli tras el wake, fue %v", fake.calls)
 	}
 }
 

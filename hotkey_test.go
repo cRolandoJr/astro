@@ -11,7 +11,8 @@ func TestHotkeyListenDisparaCaptura(t *testing.T) {
 	voice := &VoiceInput{
 		Runner: fake, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
 		WavPath: "/tmp/astro-in.wav", MaxSeconds: 30,
-		ReadFile: func(string) ([]byte, error) { return []byte("qué hora es"), nil },
+		ReadFile:  func(string) ([]byte, error) { return []byte("qué hora es"), nil },
+		RecordVAD: func(string, int, float64) error { return nil },
 	}
 	h := &HotkeyInput{events: bufio.NewScanner(strings.NewReader("go\n")), voice: voice}
 	got, err := h.Listen()
@@ -21,8 +22,8 @@ func TestHotkeyListenDisparaCaptura(t *testing.T) {
 	if got != "qué hora es" {
 		t.Fatalf("esperaba el comando capturado tras el disparo, fue %q", got)
 	}
-	if len(fake.calls) < 1 || fake.calls[0][0] != "timeout" || fake.calls[0][2] != "rec" {
-		t.Fatalf("esperaba captura (timeout rec …) tras el disparo, fue %v", fake.calls)
+	if len(fake.calls) < 1 || fake.calls[0][0] != "whisper-cli" {
+		t.Fatalf("esperaba whisper-cli tras el disparo, fue %v", fake.calls)
 	}
 }
 

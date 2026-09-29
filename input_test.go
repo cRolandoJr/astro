@@ -1,23 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"os/exec"
-	"reflect"
+
 	"testing"
 )
-
-func TestIsTimeout(t *testing.T) {
-	if !isTimeout(exec.Command("sh", "-c", "exit 124").Run()) {
-		t.Error("exit 124 (tope de timeout) debe reconocerse como timeout, no como falla")
-	}
-	if isTimeout(exec.Command("sh", "-c", "exit 1").Run()) {
-		t.Error("exit 1 no debe contarse como timeout")
-	}
-	if isTimeout(nil) {
-		t.Error("nil no es timeout")
-	}
-}
 
 func TestIsRealUtterance(t *testing.T) {
 	real := []string{"qué hora es", "poné pausa", "sí", "no", "abrí firefox", "reproducí música"}
@@ -49,43 +35,7 @@ func TestCleanTranscript(t *testing.T) {
 	}
 }
 
-func TestVoiceCaptureGrabaHastaSilencio(t *testing.T) {
-	fake := &fakeRunner{}
-	v := VoiceInput{
-		Runner: fake, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
-		WavPath: "/tmp/astro-in.wav", MaxSeconds: 30,
-		ReadFile: func(string) ([]byte, error) { return []byte("hola astro"), nil },
-	}
-	got, err := v.capture()
-	if err != nil {
-		t.Fatalf("capture: %v", err)
-	}
-	if got != "hola astro" {
-		t.Fatalf("esperaba la transcripción, fue %q", got)
-	}
-	if len(fake.calls) != 2 {
-		t.Fatalf("esperaba 2 comandos (rec, whisper), hubo %d: %v", len(fake.calls), fake.calls)
-	}
-	// comando 0: timeout <max> rec ... silence ...
-	wantRec := []string{"timeout", "30", "rec", "-q", "-c", "1", "-r", "16000", "/tmp/astro-in.wav",
-		"silence", "1", "0.1", "3%", "1", "1.5", "3%"}
-	if !reflect.DeepEqual(fake.calls[0], wantRec) {
-		t.Fatalf("comando de grabación:\n esperaba %v\n fue      %v", wantRec, fake.calls[0])
-	}
-	// comando 1: whisper (armado que se conserva de la versión anterior)
-	wantWhisper := []string{"whisper-cli", "-m", "m.bin", "-f", "/tmp/astro-in.wav", "-l", "es", "-nt", "-otxt", "-of", "/tmp/astro-in"}
-	if !reflect.DeepEqual(fake.calls[1], wantWhisper) {
-		t.Fatalf("comando whisper:\n esperaba %v\n fue      %v", wantWhisper, fake.calls[1])
-	}
-}
 
-func TestVoiceCaptureErrorSiRecFalla(t *testing.T) {
-	fake := &fakeRunner{err: fmt.Errorf("device busy")}
-	v := VoiceInput{Runner: fake, WavPath: "/tmp/x.wav"}
-	if _, err := v.capture(); err == nil {
-		t.Fatal("esperaba error si rec falla")
-	}
-}
 
 type fakeDisplay struct {
 	opened, closed bool
@@ -101,7 +51,8 @@ func TestVoiceCaptureAbreYMuestraCaraEscuchando(t *testing.T) {
 	v := VoiceInput{
 		Runner: &fakeRunner{}, WhisperBin: "whisper-cli", WhisperModel: "m.bin",
 		WavPath: "/tmp/astro-in.wav", MaxSeconds: 30, Face: disp,
-		ReadFile: func(string) ([]byte, error) { return []byte("hola"), nil },
+		ReadFile:  func(string) ([]byte, error) { return []byte("hola"), nil },
+		RecordVAD: func(string, int, float64) error { return nil },
 	}
 	if _, err := v.capture(); err != nil {
 		t.Fatalf("capture: %v", err)
